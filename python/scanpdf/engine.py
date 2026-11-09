@@ -24,11 +24,11 @@ import time
 import numpy as np
 from PIL import Image
 
-sys.path.insert(0, os.path.expanduser("~/.qoder-tools/scan-cleanup"))
 from scipy import ndimage as ndi
 from clean_scan import (despeckle, enhance_scan, flatten, ink_span_x, ink_span_y,
                         paper_span_x, paint_edge_bands, photo_mask,
-                        remove_border_slivers, remove_frame, upscale)
+                        remove_border_slivers, remove_frame, show_through_ratio,
+                        upscale)
 
 import pymupdf as fitz
 
@@ -139,6 +139,7 @@ def decide(feats):
         "notes_canvas": notes_canvas,
         "gamma_text": 1.45,
         "gamma_photo": 1.00,
+        "show_through": False,
     }
 
 
@@ -148,10 +149,12 @@ def strip_frame(a):
 
 def probe_gamma(a, dec):
     """Calibrate gamma on the frame-stripped, flat-fielded page, i.e. on the
-    exact signal the darkening curve will later receive."""
+    exact signal the darkening curve will later receive. Also measures how much
+    bleed-through the page carries, so the report can say it was cleaned."""
     b = strip_frame(a) if dec["has_frame"] else a
     f = flatten(b)
-    return auto_gamma(f), len(stroke_pixels(f))
+    m = photo_mask(f)
+    return auto_gamma(f), len(stroke_pixels(f)), show_through_ratio(f, m)
 
 
 def clean_one(a, dec):
@@ -214,11 +217,13 @@ def analyse(src):
         arrays.append(a)
     dec = decide(feats)
     if any(f["source"] != "rendered-vector" for f in feats):
-        probes = []
+        probes, ghosts = [], []
         for a in arrays:
-            g, npx = probe_gamma(a, dec)
+            g, npx, ghost = probe_gamma(a, dec)
+            ghosts.append(ghost)
             if npx > 2000:
                 probes.append(g)
+        dec["show_through"] = any(x > 0.004 for x in ghosts)
         gamma = sorted(probes)[len(probes) // 2] if probes else 1.45
         dec["gamma_text"] = gamma
         dec["gamma_photo"] = round(_clamp(gamma - 0.45, 1.00, 1.15), 3)

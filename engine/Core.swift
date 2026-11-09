@@ -20,6 +20,7 @@ public struct Decisions {
     public var notesCanvas = false
     public var upscale: Float = 1.0
     public var sheetWidthMM: Float = 0
+    public var showThrough = false
     public var retention: [Float] = []
 }
 
@@ -332,9 +333,11 @@ public enum ScanCore {
         return 1.90
     }
 
-    public static func enhance(_ a: Gray, gammaText: Float, gammaPhoto: Float) -> Gray {
-        let f = flatten(a)
+    public static func enhance(_ a: Gray, gammaText: Float, gammaPhoto: Float) -> (Gray, Float) {
+        var f = flatten(a)
         let m = photoMask(f)
+        let (cleaned, ghost) = deghost(f, photo: m)
+        f = cleaned
         let lutT = gammaLUT(gammaText)
         let lutP = gammaLUT(gammaPhoto)
         let smooth = boxBlur(f, radius: 1, passes: 1)
@@ -351,7 +354,46 @@ public enum ScanCore {
             let d = Int(out[i]) - Int(blur.px[i])
             if d < -4 { out[i] = UInt8(max(0, Int(out[i]) + d * 130 / 100)) }
         }
-        return Gray(w: f.w, h: f.h, px: out)
+        return (Gray(w: f.w, h: f.h, px: out), ghost)
+    }
+
+    /// 背面透印（show-through）抑制。
+    ///
+    /// 透印墨比纸白只暗一点点（约 1%~30%），而且总是细笔画；
+    /// 一旦加了对比度就会被一起加深，看着像"脏"。做法是把这一灰段抹回纸白，
+    /// 但用局部密度守住成片的浅灰（表格底纹、灰色横幅、色块），
+    /// 并跳过照片区域，避免把浅色照片洗掉。
+    static func deghost(_ a: Gray, photo: Gray) -> (Gray, Float) {
+        // 调试/逃生开关：不希望动浅灰的文档可以关掉这一步
+        if ProcessInfo.processInfo.environment["SCANPDF_NO_DEGHOST"] == "1" { return (a, 0) }
+        // 真实笔画（含抗锯齿边缘）附近一律不动，只清孤立在空白处的浅灰
+        var ink = [UInt8](repeating: 0, count: a.px.count)
+        for i in 0..<a.px.count where a.px[i] < 120 { ink[i] = 255 }
+        let nearInk = boxBlur(Gray(w: a.w, h: a.h, px: ink), radius: 3, passes: 1)
+
+        var mask = [UInt8](repeating: 0, count: a.px.count)
+        var hits = 0
+        for i in 0..<a.px.count {
+            let v = a.px[i]
+            if v > 196 && v < 252 && photo.px[i] < 96 && nearInk.px[i] < 8 {
+                mask[i] = 255; hits += 1
+            }
+        }
+        guard hits > max(1200, a.px.count / 500) else { return (a, 0) }
+
+        let m = Gray(w: a.w, h: a.h, px: mask)
+        let dens = boxBlur(m, radius: 9, passes: 1)
+        let soft = boxBlur(m, radius: 1, passes: 1)
+        var out = a.px
+        var removed = 0
+        for i in 0..<out.count where mask[i] != 0 {
+            if dens.px[i] > 209 { continue }          // >0.82：成片浅灰，保留
+            let alpha = Float(soft.px[i]) / 255.0
+            let v = Float(out[i]) * (1 - alpha) + 255 * alpha
+            out[i] = UInt8(min(255, max(0, v.rounded())))
+            removed += 1
+        }
+        return (Gray(w: a.w, h: a.h, px: out), Float(removed) / Float(max(1, out.count)))
     }
 
     static func paperSpanX(_ a: Gray, thr: Float = 250.5) -> (Int, Int)? {
@@ -493,7 +535,9 @@ public enum ScanCore {
         var srcs: [Gray] = []
         var cropBoundsUsed: [(Int, Int, Int, Int)] = []
         for (i, a) in pages.enumerated() {
-            var e = enhance(a, gammaText: dec.gammaText, gammaPhoto: dec.gammaPhoto)
+            let enhanced = enhance(a, gammaText: dec.gammaText, gammaPhoto: dec.gammaPhoto)
+            var e = enhanced.0
+            if enhanced.1 > 0.004 { dec.showThrough = true }
             if dec.hasFrame { e = stripFrame(e) }
             let b = cropBounds(e, notesCanvas: dec.notesCanvas)
             cropBoundsUsed.append(b)

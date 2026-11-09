@@ -54,6 +54,13 @@ Same page: reference Python engine (left) vs the Swift on-device engine compiled
   <br><sub>Biology: Python engine (left) vs Swift on-device engine (right)</sub>
 </p>
 
+Show-through from the back of the sheet (the most common double-sided scan artifact) is lifted back to paper white, while real ink, grey banners and photos stay untouched.
+
+<p align="center">
+  <img src="docs/screenshots/deghost.png" width="620" alt="show-through removal">
+  <br><sub>Same page, same area: top = before (ghost text visible), bottom = after</sub>
+</p>
+
 Result card on iPhone (fully on-device: import PDF → process → print / share / save):
 
 <p align="center">
@@ -64,17 +71,19 @@ Result card on iPhone (fully on-device: import PDF → process → print / share
 
 ### macOS · drag into Applications
 
-1. Download **`ClearPaper-macOS-1.4.1.dmg`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
+1. Download **`ClearPaper-macOS-1.5.0.dmg`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
 2. Open the DMG and drag **ClearPaper** into Applications;
 3. If blocked on first launch: right-click the app → Open → Open.
 
 The app bundles its own engine — **no Python, venv, or config needed** on the friend's Mac. Drop a PDF onto the window (or the Dock icon, multiple at once). Output defaults to `Documents/试卷清晰版`; change it via **File › 选择输出文件夹…**.
 
+> **New: show-through removal.** Faint mirror text bleeding through from the back of the sheet is detected and lifted to paper white. The rule is "light + isolated from real strokes + not a solid block", so grey banners, table shading and photos survive.
+>
 > **New: multi-file merge.** Merge several PDFs into one in the order you added them — either **full** (straight concatenation) or **duplex-safe** (a blank page after each document so two papers never share a sheet when printing double-sided). Drag rows to reorder.
 
 ### iPhone / iPad · self-sign once, keep forever
 
-1. Download **`ClearPaper-iOS-1.4.0-unsigned.ipa`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
+1. Download **`ClearPaper-iOS-1.5.0-unsigned.ipa`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
 2. On your computer install [Sideloadly](https://sideloadly.io/) (or AltStore), connect the iPhone, pick this IPA, sign with your Apple ID;
 3. On the phone: Settings → General → VPN & Device Management → trust the developer;
 4. In WeChat, open a paper → "Open in another app" → choose **ClearPaper**; or tap "导入试卷 PDF" in the app.
@@ -99,6 +108,7 @@ Python and all dependencies are bundled — **no registry, no network, delete th
 | Photo + text mixed | Per-region: deepen text, keep photo tones |
 | Low resolution | Uniform placement per batch; resample to ~300 DPI if below 230 |
 | Landscape pages | Output A4 landscape (297×210 mm); mixed portrait/landscape matched per page, no clipping |
+| Bleed-through / show-through | Removes light, isolated ghost pixels; paper returns to white, grey blocks and photos kept |
 
 Gamma is not hard-coded: it steps up until real strokes are genuinely black (stroke-brightness median ≤105).
 
@@ -170,9 +180,9 @@ Issues and PRs welcome — let's make this a real open-source gem together.
 
 | Version | Platform | Artifact | Notes |
 |---|---|---|---|
-| v1.4.1 | macOS | `ClearPaper-macOS-1.4.1.dmg` | New logo + ClearPaper rebrand; sidebar UI |
-| v1.4.0 | iOS | `ClearPaper-iOS-1.4.0-unsigned.ipa` | New logo; native app, fully on-device, self-sign |
-| v1.1.0 | Windows | `ClearPaper-Windows-portable.zip` | ClearPaper rebrand; portable, bundled deps, drag-and-drop |
+| v1.5.0 | macOS | `ClearPaper-macOS-1.5.0.dmg` | New logo + ClearPaper rebrand; sidebar UI |
+| v1.5.0 | iOS | `ClearPaper-iOS-1.5.0-unsigned.ipa` | New logo; native app, fully on-device, self-sign |
+| v1.2.0 | Windows | `ClearPaper-Windows-portable.zip` | ClearPaper rebrand; portable, bundled deps, drag-and-drop |
 
 > Current distribution uses a local **Apple Development** certificate: the Mac DMG opens on the same account; for others, re-sign with a **Developer ID** and notarize via `notarytool` (command ready, no code change). iOS free signatures last 7 days.
 

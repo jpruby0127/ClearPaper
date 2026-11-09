@@ -49,6 +49,8 @@ def _summary(dec):
         tags.append("去除扫描黑框")
     if dec.get("notes_canvas"):
         tags.append("裁除备忘录白边")
+    if dec.get("show_through"):
+        tags.append("抑制背面透印")
     return "、".join(tags) if tags else "常规扫描"
 
 

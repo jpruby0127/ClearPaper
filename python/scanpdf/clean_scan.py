@@ -217,6 +217,38 @@ def upscale(a, factor=2.0):
     return np.array(im, dtype=np.float32)
 
 
+def _ghost_mask(f, m, lo=196, hi=252, guard=19, solid=0.82):
+    """Pixels that look like bleed-through rather than real content.
+
+    Ghost ink sits only a few percent below paper white and always comes in
+    thin strokes. Grey banners, table shading and colour blocks are solid
+    areas, so a local-density guard keeps them; photos are left alone.
+    """
+    # 真实笔画（含抗锯齿边缘）附近一律不动，只清孤立在空白处的浅灰
+    near_ink = ndi.uniform_filter((f < 120).astype(np.float32), size=7)
+    mask = (f > lo) & (f < hi) & (m < 0.38) & (near_ink < 0.03)
+    if not mask.any():
+        return mask
+    dens = ndi.uniform_filter(mask.astype(np.float32), size=guard)
+    return mask & (dens <= solid)
+
+
+def show_through_ratio(f, m):
+    """Fraction of the page that would be cleaned as bleed-through."""
+    return float(_ghost_mask(f, m).mean())
+
+
+def suppress_show_through(f, m):
+    """Lift bleed-through (ink showing through from the back of the sheet) to paper white."""
+    mask = _ghost_mask(f, m)
+    if mask.mean() < 0.002:
+        return f
+    soft = ndi.uniform_filter(mask.astype(np.float32), size=3)
+    out = f.copy()
+    out[mask] = f[mask] * (1.0 - soft[mask]) + 255.0 * soft[mask]
+    return np.clip(out, 0, 255)
+
+
 def enhance_scan(a, gamma_text=1.55, gamma_photo=1.02, denoise_photo=1.3,
                  sharp_text=130, sharp_photo=45):
     """Region-aware cleanup of a photographed document page.
@@ -228,6 +260,7 @@ def enhance_scan(a, gamma_text=1.55, gamma_photo=1.02, denoise_photo=1.3,
     """
     f = flatten(a)
     m = photo_mask(f)
+    f = suppress_show_through(f, m)
     inv = 1.0 - m
     base = f * inv + a * m
     smooth = np.array(Image.fromarray(np.clip(base, 0, 255).astype(np.uint8))

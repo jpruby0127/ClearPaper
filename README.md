@@ -54,6 +54,13 @@
   <br><sub>生物卷：Python 引擎（左） vs Swift 端上引擎（右）</sub>
 </p>
 
+纸张背面透印（双面卷最常见）：浅灰虚影会被清掉，真实笔画和灰色底纹一律不动。
+
+<p align="center">
+  <img src="docs/screenshots/deghost.png" width="620" alt="背面透印抑制对比">
+  <br><sub>同一页同一区域：上=处理前（可见背面文字虚影），下=处理后</sub>
+</p>
+
 iPhone 上的处理结果卡片（全离线，导入 PDF → 本机处理 → 打印 / 分享 / 存到文件）：
 
 <p align="center">
@@ -64,7 +71,7 @@ iPhone 上的处理结果卡片（全离线，导入 PDF → 本机处理 → �
 
 ### macOS · 拖进应用程序即可用
 
-1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ClearPaper-macOS-1.4.1.dmg`**；
+1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ClearPaper-macOS-1.5.0.dmg`**；
 2. 打开 DMG，把 **ClearPaper** 拖进「应用程序」；
 3. 首次打开若被拦截：右键 App → 「打开」→「打开」。
 
@@ -73,10 +80,12 @@ App 自带清晰化引擎，**朋友电脑不需要 Python、venv 或任何配�
 > **新增：多份合并。** 把多份 PDF 按添加顺序合并成一个完整 PDF，可选「完全合并」或「合并（间隔·双面）」——后者会在每份文档后补空白页，双面打印时不同试卷不会落在同一张纸上。列表可直接拖动调整顺序。
 >
 > **已修复：横向 PDF。** 横向排版的页面会输出横向 A4（297×210mm），竖横混排逐页匹配方向，不再被裁掉。
+>
+> **新增：背面透印抑制。** 双面扫描最常见的「背面文字透过来」虚影会被单独识别并抹回纸白；判断依据是「浅灰 + 远离真实笔画 + 不成片」，所以灰底横幅、表格底纹、照片都不会被误删。
 
 ### iPhone / iPad · 自签一次，永久可用
 
-1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ClearPaper-iOS-1.4.0-unsigned.ipa`**；
+1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ClearPaper-iOS-1.5.0-unsigned.ipa`**；
 2. 电脑装 [Sideloadly](https://sideloadly.io/)（或 AltStore），连上 iPhone，选这个 IPA，填你的 Apple ID 自签；
 3. 手机：「设置 → 通用 → VPN 与设备管理」信任该开发者；
 4. 微信里收到试卷 →「用其他应用打开」→ 选 **ClearPaper**；或在 App 内点「导入试卷 PDF」。
@@ -101,6 +110,7 @@ App 自带清晰化引擎，**朋友电脑不需要 Python、venv 或任何配�
 | 照片与文字混排 | 分区处理：文字强加深，照片保留层次 |
 | 原始分辨率偏低 | 整卷统一比例放置，DPI 不足 230 时重采样到 ~300 |
 | 横向排版的页面 | 输出横向 A4（297×210mm）；竖横混排逐页匹配方向，不再裁切 |
+| 纸张背面透印（浅灰虚影） | 只清除「远离真实笔画、不成片」的浅灰，纸白归位；灰底块与照片保留 |
 
 gamma 不是写死的：从小到大试，直到「原图真实笔画在输出里确实黑」（笔画亮度中位 ≤105）。
 
@@ -172,9 +182,9 @@ pip install pymupdf numpy pillow scipy
 
 | 版本 | 平台 | 产物 | 说明 |
 |---|---|---|---|
-| v1.4.1 | macOS | `ClearPaper-macOS-1.4.1.dmg` | 新 Logo + 品牌更名 ClearPaper；侧边栏 UI |
-| v1.4.0 | iOS | `ClearPaper-iOS-1.4.0-unsigned.ipa` | 新 Logo；原生 App，全离线，需自签安装 |
-| v1.1.0 | Windows | `ClearPaper-Windows-portable.zip` | 品牌更名 ClearPaper；免安装便携包，拖拽即用 |
+| v1.5.0 | macOS | `ClearPaper-macOS-1.5.0.dmg` | 新 Logo + 品牌更名 ClearPaper；侧边栏 UI |
+| v1.5.0 | iOS | `ClearPaper-iOS-1.5.0-unsigned.ipa` | 新 Logo；原生 App，全离线，需自签安装 |
+| v1.2.0 | Windows | `ClearPaper-Windows-portable.zip` | 品牌更名 ClearPaper；免安装便携包，拖拽即用 |
 
 > 当前分发用的是本机 **Apple Development** 证书：Mac DMG 在本人/同账号下双击即开；发给他人建议用 **Developer ID** 重签并 `notarytool` 公证（命令已就绪，无需改代码）。iOS 个人账号签名 7 天有效。
 

@@ -1678,9 +1678,11 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
                     j.output = dst
                     if rep.passed && rep.pages > 0 {
                         j.state = "完成"
-                        j.detail = String(format: "%d 页 A4 · 纸面 %.0f mm · 笔画保留 %.1f%% · %.1fs",
-                                          rep.pages, Double(d.sheetWidthMM), retention * 100,
-                                          rep.seconds)
+                        var detail = String(format: "%d 页 A4 · 纸面 %.0f mm · 笔画保留 %.1f%%",
+                                            rep.pages, Double(d.sheetWidthMM), retention * 100)
+                        if d.showThrough { detail += " · 已去背面透印" }
+                        detail += String(format: " · %.1fs", rep.seconds)
+                        j.detail = detail
                     } else {
                         j.state = "未通过"
                         j.detail = rep.problems.first ?? "质量闸门未通过"
@@ -1710,7 +1712,16 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
                     } else if failures == 0 && !autoQuit {
                         self.reveal()
                     }
-                    if autoQuit { NSApp.terminate(nil) }
+                    if autoQuit {
+                        for (r, u) in results {
+                            let ret = r.decisions.retention
+                                .map { String(format: "%.1f", $0 * 100) }.joined(separator: ",")
+                            print("RESULT pages=\(r.pages) passed=\(r.passed) "
+                                + "showThrough=\(r.decisions.showThrough) retention=[\(ret)] "
+                                + "problems=\(r.problems) out=\(u.path)")
+                        }
+                        NSApp.terminate(nil)
+                    }
                 }
 
                 let ordered = self.jobs.compactMap { $0.output }
