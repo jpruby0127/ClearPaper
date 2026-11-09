@@ -58,11 +58,13 @@ Result card on iPhone (fully on-device: import PDF → process → print / share
 
 ### macOS · drag into Applications
 
-1. Download **`ScanClean-macOS-1.1.dmg`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
+1. Download **`ScanClean-macOS-1.2.dmg`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
 2. Open the DMG and drag "试卷清晰化" into Applications;
 3. If blocked on first launch: right-click the app → Open → Open.
 
 The app bundles its own engine — **no Python, venv, or config needed** on the friend's Mac. Drop a PDF onto the window (or the Dock icon, multiple at once). Output defaults to `Documents/试卷清晰版`; change it via **File › 选择输出文件夹…**.
+
+> **New: multi-file merge.** Merge several PDFs into one in the order you added them — either **full** (straight concatenation) or **duplex-safe** (a blank page after each document so two papers never share a sheet when printing double-sided). Drag rows to reorder.
 
 ### iPhone / iPad · self-sign once, keep forever
 
@@ -160,7 +162,7 @@ Issues and PRs welcome — let's make this a real open-source gem together.
 
 | Version | Platform | Artifact | Notes |
 |---|---|---|---|
-| v1.1 | macOS | `ScanClean-macOS-1.1.dmg` | Native app, signed + hardened runtime, drag-to-install |
+| v1.2 | macOS | `ScanClean-macOS-1.2.dmg` | Native app, minimal installer; new multi-file merge (full / duplex-safe) |
 | v1.2 | iOS | `ScanClean-iOS-1.2-unsigned.ipa` | Native app, fully on-device, self-sign to install |
 | v1.0 | Windows | `ScanClean-Windows-portable.zip` | Portable, bundled Python + deps, drag-and-drop |
 

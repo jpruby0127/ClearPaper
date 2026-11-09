@@ -1,10 +1,64 @@
 import AppKit
+import PDFKit
 import UniformTypeIdentifiers
 
 // 试卷扫描清晰化 · macOS 原生版
 // 清理引擎（ios/Core.swift 的 ScanCore）直接编译进本包，桌面端零依赖、全离线。
 // 输出目录默认在沙盒 Documents/试卷清晰版；用户可在「文件」菜单里改到任意文件夹
 // （通过安全作用域书签持久化），因此本 app 完全符合 Mac App Store 沙盒要求。
+
+// MARK: - 多份合并
+
+/// 输出方式：分别保存 / 完全合并 / 间隔合并（双面打印不跨卷）。
+enum MergeMode: Int {
+    case separate = 0
+    case full = 1
+    case duplex = 2
+}
+
+/// 造一张指定大小的空白 PDF 页（用于间隔合并补页）。
+func blankPDFPage(size: CGSize) -> PDFPage? {
+    let data = NSMutableData()
+    guard let consumer = CGDataConsumer(data: data as CFMutableData) else { return nil }
+    var box = CGRect(origin: .zero, size: size)
+    guard let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return nil }
+    ctx.beginPage(mediaBox: &box)
+    ctx.endPage()
+    ctx.closePDF()
+    guard let doc = PDFDocument(data: data as Data) else { return nil }
+    return doc.page(at: 0)
+}
+
+/// 按给定顺序合并 PDF。
+/// - `full`：首尾直接相接。
+/// - `duplex`：除最后一份外，每份若为奇数页就补一张同尺寸空白页，
+///   保证下一份总从新的一张纸正面开始，双面打印时不同试卷不会落在同一张纸上。
+/// 返回合并后的总页数；失败返回 0。
+func mergePDFs(_ urls: [URL], mode: MergeMode, to out: URL) -> Int {
+    let merged = PDFDocument()
+    for (idx, url) in urls.enumerated() {
+        guard let doc = PDFDocument(url: url) else { continue }
+        let n = doc.pageCount
+        guard n > 0 else { continue }
+        // 先记下末页尺寸：页面被移入 merged 后就不好再取了
+        let lastSize = doc.page(at: n - 1)?.bounds(for: .mediaBox).size
+            ?? CGSize(width: 595.28, height: 841.89)
+        for i in 0..<n {
+            if let page = doc.page(at: i) {
+                merged.insert(page, at: merged.pageCount)
+            }
+        }
+        if mode == .duplex, idx < urls.count - 1, n % 2 == 1 {
+            if let blank = blankPDFPage(size: lastSize) {
+                merged.insert(blank, at: merged.pageCount)
+            } else {
+                return 0
+            }
+        }
+    }
+    guard merged.pageCount > 0 else { return 0 }
+    return merged.write(to: out) ? merged.pageCount : 0
+}
 
 // MARK: - 输出目录（沙盒安全）
 
@@ -340,6 +394,13 @@ func presentHelp() {
 打印小贴士
 打印时选 A4、缩放「实际大小 / 100%」，不要选「适合页面」，效果最准。
 
+合并多份试卷
+• 把多份 PDF 按顺序加入队列，可拖动行调整顺序。
+• 「输出方式」里选：
+  · 分别保存：每份各存一个清晰版。
+  · 合并（完全）：按顺序首尾相接成一个 PDF。
+  · 合并（间隔·双面）：每份文档后补空白页，双面打印时不同试卷不会落在同一张纸上。
+
 支持
 • 一次拖入多份 PDF，会按顺序全部处理。
 • 双击已完成的一行，可直接打开对应的清晰版 PDF。
@@ -377,11 +438,16 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
     let status = NSTextField(labelWithString: "全离线 · 拖入 PDF 即可")
     let start = NSButton()
     let openBtn = NSButton()
+    let mergePopup = NSPopUpButton()
     var jobs: [Job] = []
     var busy = false
     var queueMinH: NSLayoutConstraint!
     var flex: NSView!
     var queueBox: NSView!
+
+    var mergeMode: MergeMode {
+        MergeMode(rawValue: mergePopup.indexOfSelectedItem) ?? .separate
+    }
 
     // MARK: 菜单栏
 
@@ -539,6 +605,8 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         table.backgroundColor = .clear
         table.selectionHighlightStyle = .none
         table.intercellSpacing = NSSize(width: 0, height: 8)
+        table.registerForDraggedTypes([.string])
+        table.draggingDestinationFeedbackStyle = .gap
         table.dataSource = self
         table.delegate = self
         table.target = self
@@ -592,6 +660,28 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         flex.setContentHuggingPriority(.defaultLow, for: .vertical)
         syncQueue()
 
+        // 输出方式：分别保存 / 合并（完全）/ 合并（间隔·双面）
+        let optRow = NSStackView()
+        optRow.orientation = .horizontal
+        optRow.spacing = 8
+        let optLabel = NSTextField(labelWithString: "输出方式")
+        optLabel.font = .systemFont(ofSize: 12)
+        optLabel.textColor = .secondaryLabelColor
+        mergePopup.controlSize = .small
+        mergePopup.font = .systemFont(ofSize: 12)
+        mergePopup.addItems(withTitles: ["分别保存", "合并（完全）", "合并（间隔·双面）"])
+        mergePopup.toolTip = "合并按队列顺序；间隔模式会在每份文档后补空白页，双面打印时不同试卷不会落在同一张纸上。"
+        mergePopup.target = self
+        mergePopup.action = #selector(mergeModeChanged)
+        let savedMode = UserDefaults.standard.integer(forKey: "scanpdf.mergeMode")
+        mergePopup.selectItem(at: min(max(savedMode, 0), 2))
+        let optSpacer = NSView()
+        optSpacer.translatesAutoresizingMaskIntoConstraints = false
+        optSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        optRow.addArrangedSubview(optLabel)
+        optRow.addArrangedSubview(mergePopup)
+        optRow.addArrangedSubview(optSpacer)
+
         let foot = NSStackView()
         foot.orientation = .horizontal
         foot.spacing = 10
@@ -603,7 +693,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         openBtn.bezelStyle = .rounded
         openBtn.target = self
         openBtn.action = #selector(reveal)
-        start.title = "开始处理"
+        start.title = mergeMode == .separate ? "开始处理" : "开始并合并"
         start.bezelStyle = .rounded
         start.keyEquivalent = "\r"
         start.target = self
@@ -621,6 +711,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         root.addArrangedSubview(drop)
         root.addArrangedSubview(queueBox)
         root.addArrangedSubview(flex)
+        root.addArrangedSubview(optRow)
         root.addArrangedSubview(foot)
 
         window.contentView = root
@@ -632,6 +723,11 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         ])
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        // 自动化：SCANPDF_MERGE=full|duplex 可直接指定合并模式。
+        if let m = ProcessInfo.processInfo.environment["SCANPDF_MERGE"] {
+            applyMergeMode(m == "full" ? 1 : (m == "duplex" ? 2 : 0), persist: false)
+        }
 
         // 命令行入口：拖 PDF 路径进来即可排队，SCANPDF_AUTORUN=1 立即处理。
         // 同一段代码也是按钮走的路径，顺带当自动化测试用。
@@ -715,6 +811,27 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
 
     @objc func chooseOutput() { OutputStore.shared.choose() }
 
+    func applyMergeMode(_ index: Int, persist: Bool = true) {
+        mergePopup.selectItem(at: min(max(index, 0), 2))
+        if persist {
+            UserDefaults.standard.set(mergePopup.indexOfSelectedItem, forKey: "scanpdf.mergeMode")
+        }
+        start.title = mergeMode == .separate ? "开始处理" : "开始并合并"
+    }
+
+    @objc func mergeModeChanged() {
+        applyMergeMode(mergePopup.indexOfSelectedItem)
+        guard !busy else { return }
+        switch mergeMode {
+        case .separate:
+            status.stringValue = jobs.isEmpty ? "就绪" : "已加入 \(jobs.count) 个文件"
+        case .full:
+            status.stringValue = "完全合并：按队列顺序首尾相接成一个 PDF"
+        case .duplex:
+            status.stringValue = "间隔合并：每份后补空白页，双面打印不跨卷"
+        }
+    }
+
     @objc func reveal() {
         let url = OutputStore.shared.url
         if !FileManager.default.fileExists(atPath: url.path) {
@@ -741,6 +858,36 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
 
     func numberOfRows(in t: NSTableView) -> Int { jobs.count }
 
+    // 拖动行调整顺序（合并严格按这个顺序）
+    func tableView(_ t: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
+        let item = NSPasteboardItem()
+        item.setString(String(row), forType: .string)
+        return item
+    }
+
+    func tableView(_ t: NSTableView, validateDrop info: NSDraggingInfo,
+                   proposedRow row: Int,
+                   proposedDropOperation op: NSTableView.DropOperation) -> NSDragOperation {
+        guard !busy else { return [] }
+        return op == .above ? .move : []
+    }
+
+    func tableView(_ t: NSTableView, acceptDrop info: NSDraggingInfo,
+                   row: Int, dropOperation op: NSTableView.DropOperation) -> Bool {
+        guard !busy,
+              let item = info.draggingPasteboard.pasteboardItems?.first,
+              let s = item.string(forType: .string), let from = Int(s),
+              from >= 0, from < jobs.count else { return false }
+        var to = row
+        let job = jobs.remove(at: from)
+        if to > from { to -= 1 }
+        to = min(max(to, 0), jobs.count)
+        jobs.insert(job, at: to)
+        t.reloadData()
+        status.stringValue = "已调整顺序 · 合并将按新顺序"
+        return true
+    }
+
     func tableView(_ t: NSTableView, viewFor col: NSTableColumn?, row: Int) -> NSView? {
         let id = NSUserInterfaceItemIdentifier("row")
         let cell = t.makeView(withIdentifier: id, owner: self) as? RowCell ?? RowCell()
@@ -763,6 +910,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
 
     func run(_ rows: [Job]) {
         let outBase = OutputStore.shared.url
+        let mode = mergeMode
         try? FileManager.default.createDirectory(at: outBase, withIntermediateDirectories: true)
         let tasks = rows.compactMap { j -> (Job, URL)? in
             guard let src = j.source, FileManager.default.fileExists(atPath: src.path) else {
@@ -813,18 +961,59 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
             let failures = results.filter { !$0.0.passed || $0.0.pages == 0 }.count
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.busy = false
                 self.table.reloadData()
-                self.start.isEnabled = self.jobs.contains {
-                    $0.state == "排队中" || $0.state == "失败" || $0.state == "未通过"
-                }
-                self.status.stringValue = failures == 0
-                    ? "完成 · 结果在 文稿/试卷清晰版"
-                    : "有 \(failures) 项未通过质量闸门"
                 NSApp.activate(ignoringOtherApps: true)
                 let autoQuit = ProcessInfo.processInfo.environment["SCANPDF_AUTOQUIT"] == "1"
-                if failures == 0 && !autoQuit { self.reveal() }
-                if autoQuit { NSApp.terminate(nil) }
+
+                let finish: (String, URL?) -> Void = { [weak self] message, revealURL in
+                    guard let self else { return }
+                    self.busy = false
+                    self.start.isEnabled = self.jobs.contains {
+                        $0.state == "排队中" || $0.state == "失败" || $0.state == "未通过"
+                    }
+                    self.status.stringValue = message
+                    if let u = revealURL {
+                        NSWorkspace.shared.activateFileViewerSelecting([u])
+                    } else if !autoQuit {
+                        self.reveal()
+                    }
+                    if autoQuit { NSApp.terminate(nil) }
+                }
+
+                // 合并按“队列顺序”取所有已完成的结果，跨批次也保持一致。
+                let ordered = self.jobs.compactMap { $0.output }
+                    .filter { FileManager.default.fileExists(atPath: $0.path) }
+
+                if mode != .separate, ordered.count >= 2 {
+                    self.status.stringValue = "正在合并 \(ordered.count) 份…"
+                    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                        guard let self else { return }
+                        let df = DateFormatter()
+                        df.locale = Locale(identifier: "en_US_POSIX")
+                        df.dateFormat = "yyyyMMdd-HHmmss"
+                        let out = outBase.appendingPathComponent(
+                            "合并清晰版-\(df.string(from: Date())).pdf")
+                        let pages = mergePDFs(ordered, mode: mode, to: out)
+                        DispatchQueue.main.async {
+                            if pages > 0 {
+                                let extra = failures == 0 ? "" : "（跳过 \(failures) 份未通过）"
+                                finish("已合并 \(ordered.count) 份 · \(pages) 页\(extra)", out)
+                            } else {
+                                self.busy = false
+                                self.start.isEnabled = true
+                                self.status.stringValue = "合并失败"
+                                presentError("合并 PDF 失败，请检查文件是否有效。")
+                                if autoQuit { NSApp.terminate(nil) }
+                            }
+                        }
+                    }
+                } else if mode != .separate, ordered.count == 1 {
+                    finish("仅 1 份，已单独保存（未合并）", nil)
+                } else {
+                    finish(failures == 0
+                        ? "完成 · 结果在 文稿/试卷清晰版"
+                        : "有 \(failures) 项未通过质量闸门", nil)
+                }
             }
         }
     }

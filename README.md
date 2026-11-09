@@ -58,11 +58,13 @@ iPhone 上的处理结果卡片（全离线，导入 PDF → 本机处理 → �
 
 ### macOS · 拖进应用程序即可用
 
-1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ScanClean-macOS-1.1.dmg`**；
+1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ScanClean-macOS-1.2.dmg`**；
 2. 打开 DMG，把「试卷清晰化」拖进「应用程序」；
 3. 首次打开若被拦截：右键 App → 「打开」→「打开」。
 
 App 自带清晰化引擎，**朋友电脑不需要 Python、venv 或任何配置**。把 PDF 拖进窗口（或拖到 Dock 图标，可一次多个）即可。输出默认在 `文稿/试卷清晰版`，可在「文件 › 选择输出文件夹…」改到任意位置并记住。
+
+> **新增：多份合并。** 把多份 PDF 按添加顺序合并成一个完整 PDF，可选「完全合并」或「合并（间隔·双面）」——后者会在每份文档后补空白页，双面打印时不同试卷不会落在同一张纸上。列表可直接拖动调整顺序。
 
 ### iPhone / iPad · 自签一次，永久可用
 
@@ -160,7 +162,7 @@ pip install pymupdf numpy pillow scipy
 
 | 版本 | 平台 | 产物 | 说明 |
 |---|---|---|---|
-| v1.1 | macOS | `ScanClean-macOS-1.1.dmg` | 原生 App，已签名 + 强化运行时，拖拽即装 |
+| v1.2 | macOS | `ScanClean-macOS-1.2.dmg` | 原生 App，简洁安装盘；新增多份合并（完全 / 间隔·双面） |
 | v1.2 | iOS | `ScanClean-iOS-1.2-unsigned.ipa` | 原生 App，全离线，需自签安装 |
 | v1.0 | Windows | `ScanClean-Windows-portable.zip` | 免安装便携包，内置 Python 与依赖，拖拽即用 |
 
