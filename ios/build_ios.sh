@@ -32,8 +32,8 @@ cat > "$STAGE/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>试卷清晰化</string>
   <key>CFBundleDisplayName</key><string>试卷清晰化</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.2</string>
-  <key>CFBundleVersion</key><string>3</string>
+  <key>CFBundleShortVersionString</key><string>1.2.1</string>
+  <key>CFBundleVersion</key><string>4</string>
   <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
   <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
   <key>DTPlatformName</key><string>iphoneos</string>

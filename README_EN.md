@@ -58,7 +58,7 @@ Result card on iPhone (fully on-device: import PDF → process → print / share
 
 ### macOS · drag into Applications
 
-1. Download **`ScanClean-macOS-1.2.dmg`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
+1. Download **`ScanClean-macOS-1.2.1.dmg`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
 2. Open the DMG and drag "试卷清晰化" into Applications;
 3. If blocked on first launch: right-click the app → Open → Open.
 
@@ -68,7 +68,7 @@ The app bundles its own engine — **no Python, venv, or config needed** on the 
 
 ### iPhone / iPad · self-sign once, keep forever
 
-1. Download **`ScanClean-iOS-1.2-unsigned.ipa`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
+1. Download **`ScanClean-iOS-1.2.1-unsigned.ipa`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
 2. On your computer install [Sideloadly](https://sideloadly.io/) (or AltStore), connect the iPhone, pick this IPA, sign with your Apple ID;
 3. On the phone: Settings → General → VPN & Device Management → trust the developer;
 4. In WeChat, open a paper → "Open in another app" → choose 试卷清晰化; or tap "导入试卷 PDF" in the app.
@@ -92,6 +92,7 @@ Python and all dependencies are bundled — **no registry, no network, delete th
 | iPhone Notes white canvas | Crop back to paper, recover wasted 25% |
 | Photo + text mixed | Per-region: deepen text, keep photo tones |
 | Low resolution | Uniform placement per batch; resample to ~300 DPI if below 230 |
+| Landscape pages | Output A4 landscape (297×210 mm); mixed portrait/landscape matched per page, no clipping |
 
 Gamma is not hard-coded: it steps up until real strokes are genuinely black (stroke-brightness median ≤105).
 
@@ -162,9 +163,9 @@ Issues and PRs welcome — let's make this a real open-source gem together.
 
 | Version | Platform | Artifact | Notes |
 |---|---|---|---|
-| v1.2 | macOS | `ScanClean-macOS-1.2.dmg` | Native app, minimal installer; new multi-file merge (full / duplex-safe) |
-| v1.2 | iOS | `ScanClean-iOS-1.2-unsigned.ipa` | Native app, fully on-device, self-sign to install |
-| v1.0 | Windows | `ScanClean-Windows-portable.zip` | Portable, bundled Python + deps, drag-and-drop |
+| v1.2.1 | macOS | `ScanClean-macOS-1.2.1.dmg` | Minimal installer; multi-file merge + landscape A4 fix |
+| v1.2.1 | iOS | `ScanClean-iOS-1.2.1-unsigned.ipa` | Native app, fully on-device, self-sign to install |
+| v1.0.1 | Windows | `ScanClean-Windows-portable.zip` | Portable, bundled Python + deps, drag-and-drop |
 
 > Current distribution uses a local **Apple Development** certificate: the Mac DMG opens on the same account; for others, re-sign with a **Developer ID** and notarize via `notarytool` (command ready, no code change). iOS free signatures last 7 days.
 

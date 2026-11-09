@@ -502,14 +502,23 @@ public enum ScanCore {
             progress?("增强 \(i + 1)/\(pages.count)")
         }
 
-        let a4w: CGFloat = 595.2756, a4h: CGFloat = 841.8898
+        let a4w: CGFloat = 595.2756, a4h: CGFloat = 841.8898   // A4 竖向
         let inset: CGFloat = 4.0 / 25.4 * 72.0
-        let boxH = a4h - 2 * inset
-        let sheetPt = crops.map { boxH * CGFloat($0.w) / CGFloat($0.h) }.min() ?? a4w - 2 * inset
-        let placedDPI = Float(crops.map { Float($0.w) / (Float(sheetPt) / 72.0) }
-            .sorted()[crops.count / 2])
+        // 按内容方向选 A4 竖向 / 横向；整批用统一缩放，物理比例保持一致。
+        func sheetSize(for g: Gray) -> CGSize {
+            g.w >= g.h ? CGSize(width: a4h, height: a4w)   // 横向页
+                       : CGSize(width: a4w, height: a4h)   // 竖向页
+        }
+        let baseScale = crops.map { c -> CGFloat in
+            let s = sheetSize(for: c)
+            let availW = s.width - 2 * inset, availH = s.height - 2 * inset
+            return min(availW / CGFloat(max(1, c.w)), availH / CGFloat(max(1, c.h)))
+        }.min() ?? 1
+        let placedDPI = Float(72.0 / baseScale)
         if placedDPI < 230 { dec.upscale = min(3.0, max(1.0, 300.0 / placedDPI)) }
-        dec.sheetWidthMM = Float(sheetPt) / 72.0 * 25.4
+        let finalScale = baseScale / CGFloat(dec.upscale)
+        let widthsMM = crops.map { Float($0.w) * Float(baseScale) / 72.0 * 25.4 }.sorted()
+        dec.sheetWidthMM = widthsMM.isEmpty ? 0 : widthsMM[widthsMM.count / 2]
 
         var finalPages: [Gray] = []
         for (i, c) in crops.enumerated() {
@@ -527,7 +536,7 @@ public enum ScanCore {
             }
             progress?("校验 \(i + 1)/\(pages.count)")
         }
-        writePDF(finalPages, to: dst, sheetPt: sheetPt)
+        writePDF(finalPages, to: dst, scale: finalScale, inset: inset)
         rep.pages = pages.count
         rep.decisions = dec
         rep.seconds = Date().timeIntervalSince(t0)
@@ -579,17 +588,26 @@ public enum ScanCore {
 
     // MARK: pdf output
 
-    public static func writePDF(_ pages: [Gray], to url: URL, sheetPt: CGFloat) {
+    public static func writePDF(_ pages: [Gray], to url: URL,
+                                scale: CGFloat, inset: CGFloat) {
         let a4w: CGFloat = 595.2756, a4h: CGFloat = 841.8898
-        let inset: CGFloat = 4.0 / 25.4 * 72.0
         var box = CGRect(x: 0, y: 0, width: a4w, height: a4h)
         guard let ctx = CGContext(url as CFURL, mediaBox: &box, nil) else { return }
         for g in pages {
-            ctx.beginPDFPage(nil)
+            // 每页独立设置 MediaBox：横向内容用横向 A4，避免被竖向页面裁掉。
+            let size = g.w >= g.h ? CGSize(width: a4h, height: a4w)
+                                  : CGSize(width: a4w, height: a4h)
+            // 注意：kCGPDFContextMediaBox 的值必须是「装着 CGRect 字节的 CFData」，
+            // 直接传 CGRect 会被忽略，页面仍旧沿用 context 的默认竖向尺寸。
+            let mediaBox = CGRect(origin: .zero, size: size)
+            let boxData = withUnsafeBytes(of: mediaBox) { Data($0) } as CFData
+            let info: [CFString: Any] = [kCGPDFContextMediaBox: boxData]
+            ctx.beginPDFPage(info as CFDictionary)
             if let cg = cgImage(g) {
-                let s = sheetPt / CGFloat(g.w)
-                let rw = CGFloat(g.w) * s, rh = CGFloat(g.h) * s
-                let rect = CGRect(x: (a4w - rw) / 2, y: a4h - inset - rh, width: rw, height: rh)
+                let rw = CGFloat(g.w) * scale, rh = CGFloat(g.h) * scale
+                let rect = CGRect(x: (size.width - rw) / 2,
+                                  y: size.height - inset - rh,
+                                  width: rw, height: rh)
                 ctx.interpolationQuality = .high
                 ctx.draw(cg, in: rect)
             }

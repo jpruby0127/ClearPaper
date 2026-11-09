@@ -235,7 +235,7 @@ def process_pdf(src, dst=None, progress=None, overwrite=False):
                 "detail": "这份 PDF 本身是矢量文字（不是拍照/扫描），打印已经是最清晰的，无需处理。"}
 
     inset = MARGIN_MM / 25.4 * 72.0
-    box_h = A4_PT[1] - 2 * inset
+    a4w, a4h = A4_PT
 
     crops = []
     for i, (a, f) in enumerate(zip(arrays, feats)):
@@ -245,10 +245,17 @@ def process_pdf(src, dst=None, progress=None, overwrite=False):
         x0, x1, y0, y1 = crop_bounds(b, dec)
         crops.append(b[y0:y1, x0:x1])
 
-    # one shared sheet width for the whole document, so the type size cannot
-    # jump between pages; the tallest crop sets it because A4 height binds.
-    sheet_w_pt = min(box_h * (c.shape[1] / c.shape[0]) for c in crops)
-    placed_dpi = float(np.median([c.shape[1] / (sheet_w_pt / 72.0) for c in crops]))
+    # 每页按内容方向选 A4 竖向 / 横向；整批统一缩放，避免字号跳变。
+    def page_size(c):
+        h, w = c.shape
+        return (a4h, a4w) if w >= h else (a4w, a4h)   # (width, height)
+
+    base_scale = min(
+        min((page_size(c)[0] - 2 * inset) / max(1, c.shape[1]),
+            (page_size(c)[1] - 2 * inset) / max(1, c.shape[0]))
+        for c in crops
+    )
+    placed_dpi = 72.0 / base_scale
     factor = 1.0
     if placed_dpi < DPI_FLOOR:
         factor = _clamp(TARGET_DPI / placed_dpi, 1.0, MAX_UPSCALE)
@@ -274,17 +281,18 @@ def process_pdf(src, dst=None, progress=None, overwrite=False):
         if progress:
             progress(f"page {i + 1}/{n} place")
         h, w = c.shape
-        s = sheet_w_pt / w
+        pw, ph = page_size(c)
+        s = base_scale / factor                   # 统一物理比例（factor 只增加像素）
         rw, rh = w * s, h * s
-        if rh > box_h + 0.5:                      # rounding guard
-            s = box_h / h
+        if rh > ph - 2 * inset + 0.5:             # rounding guard
+            s = (ph - 2 * inset) / h
             rw, rh = w * s, h * s
-        pg = out.new_page(width=A4_PT[0], height=A4_PT[1])
+        pg = out.new_page(width=pw, height=ph)
         buf = io.BytesIO()
         Image.fromarray(c).save(buf, format="PNG", optimize=True)
         buf.seek(0)
-        pg.insert_image(fitz.Rect((A4_PT[0] - rw) / 2, inset,
-                                  (A4_PT[0] + rw) / 2, inset + rh),
+        pg.insert_image(fitz.Rect((pw - rw) / 2, inset,
+                                  (pw + rw) / 2, inset + rh),
                         stream=buf.read(), keep_proportion=False)
         placed.append({"page": i + 1, "src_px": [feats[i]["w"], feats[i]["h"]],
                        "crop_px": [int(w), int(h)],
@@ -300,7 +308,7 @@ def process_pdf(src, dst=None, progress=None, overwrite=False):
         "status": "ok", "src": src, "out": dst, "pages": n,
         "decisions": dec, "upscale_factor": round(factor, 2),
         "placed_dpi_before_upscale": round(placed_dpi),
-        "sheet_width_mm": round(sheet_w_pt / 72 * 25.4, 1),
+        "sheet_width_mm": round(float(np.median([c.shape[1] * base_scale for c in crops])) / 72 * 25.4, 1),
         "output_bytes": size, "seconds": round(time.time() - t0, 1),
         "per_page": placed,
         "vector_pages": [i + 1 for i, f in enumerate(feats) if f["source"] == "rendered-vector"],

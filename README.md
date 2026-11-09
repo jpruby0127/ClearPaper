@@ -58,17 +58,19 @@ iPhone 上的处理结果卡片（全离线，导入 PDF → 本机处理 → �
 
 ### macOS · 拖进应用程序即可用
 
-1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ScanClean-macOS-1.2.dmg`**；
+1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ScanClean-macOS-1.2.1.dmg`**；
 2. 打开 DMG，把「试卷清晰化」拖进「应用程序」；
 3. 首次打开若被拦截：右键 App → 「打开」→「打开」。
 
 App 自带清晰化引擎，**朋友电脑不需要 Python、venv 或任何配置**。把 PDF 拖进窗口（或拖到 Dock 图标，可一次多个）即可。输出默认在 `文稿/试卷清晰版`，可在「文件 › 选择输出文件夹…」改到任意位置并记住。
 
 > **新增：多份合并。** 把多份 PDF 按添加顺序合并成一个完整 PDF，可选「完全合并」或「合并（间隔·双面）」——后者会在每份文档后补空白页，双面打印时不同试卷不会落在同一张纸上。列表可直接拖动调整顺序。
+>
+> **已修复：横向 PDF。** 横向排版的页面会输出横向 A4（297×210mm），竖横混排逐页匹配方向，不再被裁掉。
 
 ### iPhone / iPad · 自签一次，永久可用
 
-1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ScanClean-iOS-1.2-unsigned.ipa`**；
+1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ScanClean-iOS-1.2.1-unsigned.ipa`**；
 2. 电脑装 [Sideloadly](https://sideloadly.io/)（或 AltStore），连上 iPhone，选这个 IPA，填你的 Apple ID 自签；
 3. 手机：「设置 → 通用 → VPN 与设备管理」信任该开发者；
 4. 微信里收到试卷 →「用其他应用打开」→ 选「试卷清晰化」；或在 App 内点「导入试卷 PDF」。
@@ -92,6 +94,7 @@ App 自带清晰化引擎，**朋友电脑不需要 Python、venv 或任何配�
 | iPhone 备忘录白画布 | 裁回纸面，找回被浪费的 25% 幅面 |
 | 照片与文字混排 | 分区处理：文字强加深，照片保留层次 |
 | 原始分辨率偏低 | 整卷统一比例放置，DPI 不足 230 时重采样到 ~300 |
+| 横向排版的页面 | 输出横向 A4（297×210mm）；竖横混排逐页匹配方向，不再裁切 |
 
 gamma 不是写死的：从小到大试，直到「原图真实笔画在输出里确实黑」（笔画亮度中位 ≤105）。
 
@@ -162,9 +165,9 @@ pip install pymupdf numpy pillow scipy
 
 | 版本 | 平台 | 产物 | 说明 |
 |---|---|---|---|
-| v1.2 | macOS | `ScanClean-macOS-1.2.dmg` | 原生 App，简洁安装盘；新增多份合并（完全 / 间隔·双面） |
-| v1.2 | iOS | `ScanClean-iOS-1.2-unsigned.ipa` | 原生 App，全离线，需自签安装 |
-| v1.0 | Windows | `ScanClean-Windows-portable.zip` | 免安装便携包，内置 Python 与依赖，拖拽即用 |
+| v1.2.1 | macOS | `ScanClean-macOS-1.2.1.dmg` | 简洁安装盘；多份合并 + 横向 A4 修复 |
+| v1.2.1 | iOS | `ScanClean-iOS-1.2.1-unsigned.ipa` | 原生 App，全离线，需自签安装 |
+| v1.0.1 | Windows | `ScanClean-Windows-portable.zip` | 免安装便携包，内置 Python 与依赖，拖拽即用 |
 
 > 当前分发用的是本机 **Apple Development** 证书：Mac DMG 在本人/同账号下双击即开；发给他人建议用 **Developer ID** 重签并 `notarytool` 公证（命令已就绪，无需改代码）。iOS 个人账号签名 7 天有效。
 
