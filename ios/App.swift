@@ -48,7 +48,7 @@ final class Store: ObservableObject {
         let scoped = u.startAccessingSecurityScopedResource()
         defer { if scoped { u.stopAccessingSecurityScopedResource() } }
         let dst = fm.temporaryDirectory
-            .appendingPathComponent("ScanClean-\(UUID().uuidString)-\(u.lastPathComponent)")
+            .appendingPathComponent("ClearPaper-\(UUID().uuidString)-\(u.lastPathComponent)")
         do {
             try fm.copyItem(at: u, to: dst)
             return dst
@@ -334,7 +334,7 @@ struct ContentView: View {
                     .padding(.bottom, 24)
                 }
             }
-            .navigationTitle("试卷清晰化")
+            .navigationTitle("ClearPaper")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -415,7 +415,7 @@ struct ContentView: View {
 }
 
 @main
-struct ScanCleanApp: App {
+struct ClearPaperApp: App {
     var body: some Scene {
         WindowGroup { ContentView() }
     }

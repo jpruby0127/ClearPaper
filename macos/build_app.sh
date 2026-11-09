@@ -1,19 +1,19 @@
 #!/bin/bash
-# 构建「试卷清晰化」macOS 原生版 .app
+# 构建 ClearPaper 的 macOS 原生版 .app
 # 清理引擎（engine/Core.swift 的 ScanCore）直接编译进包，零依赖、全离线。
 #
 # 用法：
 #   ./build_app.sh                          # 默认：非沙盒 + 强化运行时，可直接发给朋友（需 Developer ID 公证）
 #   SANDBOX=1 ./build_app.sh                # 上架版：开启 App Sandbox，符合 Mac App Store 要求
 #   SIGN_ID="身份名称" ./build_app.sh       # 指定签名证书（默认自动挑可用的 Apple 证书，没有则 ad-hoc）
-#   DEST=/path/to/App.app ./build_app.sh    # 指定输出 .app 路径（默认 ~/Applications/试卷扫描清晰化.app）
+#   DEST=/path/to/App.app ./build_app.sh    # 指定输出 .app 路径（默认 ~/Applications/ClearPaper.app）
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLS="$(cd "$SCRIPT_DIR/.." && pwd)"
-APP="${DEST:-$HOME/Applications/试卷扫描清晰化.app}"
-NAME="试卷扫描清晰化"
-BID="com.scanclean.mac"
+APP="${DEST:-$HOME/Applications/ClearPaper.app}"
+NAME="ClearPaper"
+BID="com.jpruby.clearpaper"
 ICON="$TOOLS/macos/Icon.icns"
 SANDBOX="${SANDBOX:-0}"
 
@@ -59,15 +59,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>$NAME</string>
   <key>CFBundleIdentifier</key><string>$BID</string>
   <key>CFBundleName</key><string>$NAME</string>
-  <key>CFBundleDisplayName</key><string>试卷清晰化</string>
+  <key>CFBundleDisplayName</key><string>ClearPaper</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.3.1</string>
-  <key>CFBundleVersion</key><string>7</string>
+  <key>CFBundleShortVersionString</key><string>1.4.0</string>
+  <key>CFBundleVersion</key><string>8</string>
   <key>CFBundleIconFile</key><string>Icon.icns</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSHumanReadableCopyright</key><string>本地工具 · 全离线处理</string>
+  <key>NSHumanReadableCopyright</key><string>© 2026 jpruby · 全离线处理</string>
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>
@@ -93,5 +93,5 @@ fi
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -f "$APP" 2>/dev/null || true
 
-echo "已安装：$APP （1.3.1，自包含 Swift 引擎，sandbox=${SANDBOX:-0}）"
-echo "在 Launchpad 或 访达 › 应用程序 里搜「试卷清晰化」即可打开"
+echo "已安装：$APP （1.4.0，自包含 Swift 引擎，sandbox=${SANDBOX:-0}）"
+echo "在 Launchpad 或 访达 › 应用程序 里搜「ClearPaper」即可打开"

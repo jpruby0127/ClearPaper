@@ -38,7 +38,7 @@ Scans and phone photos of exam papers usually come with problems:
 
 <p align="center">
   <img src="docs/screenshots/mac-ui.png" width="760" alt="macOS UI">
-  <br><sub>macOS 1.3: sidebar + card layout for Process / Settings / Help</sub>
+  <br><sub>ClearPaper: sidebar + card layout for Process / Settings / Help</sub>
 </p>
 
 Same page: reference Python engine (left) vs the Swift on-device engine compiled into the app — **identical output**, proving the phone/desktop runs the same algorithm:
@@ -63,7 +63,7 @@ Result card on iPhone (fully on-device: import PDF → process → print / share
 
 ### macOS · drag into Applications
 
-1. Download **`ScanClean-macOS-1.3.1.dmg`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
+1. Download **`ClearPaper-macOS-1.4.0.dmg`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
 2. Open the DMG and drag "试卷清晰化" into Applications;
 3. If blocked on first launch: right-click the app → Open → Open.
 
@@ -73,7 +73,7 @@ The app bundles its own engine — **no Python, venv, or config needed** on the 
 
 ### iPhone / iPad · self-sign once, keep forever
 
-1. Download **`ScanClean-iOS-1.2.1-unsigned.ipa`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
+1. Download **`ClearPaper-iOS-1.4.0-unsigned.ipa`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
 2. On your computer install [Sideloadly](https://sideloadly.io/) (or AltStore), connect the iPhone, pick this IPA, sign with your Apple ID;
 3. On the phone: Settings → General → VPN & Device Management → trust the developer;
 4. In WeChat, open a paper → "Open in another app" → choose 试卷清晰化; or tap "导入试卷 PDF" in the app.
@@ -132,7 +132,7 @@ cd macos
 
 ```bash
 cd ios
-./build_ios.sh ../ScanClean-iOS-unsigned.ipa
+./build_ios.sh ../ClearPaper-iOS-unsigned.ipa
 ```
 
 Run it in the simulator:
@@ -168,8 +168,8 @@ Issues and PRs welcome — let's make this a real open-source gem together.
 
 | Version | Platform | Artifact | Notes |
 |---|---|---|---|
-| v1.3.1 | macOS | `ScanClean-macOS-1.3.1.dmg` | New sidebar UI; multi-file merge + landscape A4 fix |
-| v1.2.1 | iOS | `ScanClean-iOS-1.2.1-unsigned.ipa` | Native app, fully on-device, self-sign to install |
+| v1.4.0 | macOS | `ClearPaper-macOS-1.4.0.dmg` | New logo + ClearPaper rebrand; sidebar UI |
+| v1.4.0 | iOS | `ClearPaper-iOS-1.4.0-unsigned.ipa` | New logo; native app, fully on-device, self-sign |
 | v1.0.1 | Windows | `ScanClean-Windows-portable.zip` | Portable, bundled Python + deps, drag-and-drop |
 
 > Current distribution uses a local **Apple Development** certificate: the Mac DMG opens on the same account; for others, re-sign with a **Developer ID** and notarize via `notarytool` (command ready, no code change). iOS free signatures last 7 days.

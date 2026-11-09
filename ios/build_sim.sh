@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLS="$(cd "$SCRIPT_DIR/.." && pwd)"
 SHOT="${1:-}"
 SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
-STAGE="$(mktemp -d)/ScanClean.app"
+STAGE="$(mktemp -d)/ClearPaper.app"
 mkdir -p "$STAGE"
 
 if ! xcrun simctl list runtimes | grep -q "iOS"; then
@@ -23,13 +23,13 @@ if [ -z "$BOOTED" ]; then
     RT="$(xcrun simctl list runtimes | grep -m1 -oE 'com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]+' || true)"
     [ -n "$RT" ] || { echo "没有 iOS 运行时，请先在 Xcode > Components 下载" >&2; exit 2; }
     TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-16"
-    DEV="$(xcrun simctl create "ScanClean 测试" "$TYPE" "$RT" 2>/dev/null || true)"
+    DEV="$(xcrun simctl create "ClearPaper 测试" "$TYPE" "$RT" 2>/dev/null || true)"
     if ! echo "$DEV" | grep -qE "^[0-9A-Fa-f-]{36}$"; then
       # 部分运行时只提供受限设备集；回退到它声明的第一个设备类型。
       TYPE="$(xcrun simctl list runtimes -j | /usr/bin/python3 -c \
         'import json,sys; d=json.load(sys.stdin); t=d["runtimes"][0].get("supportedDeviceTypes") or []; print(t[0]["identifier"] if t else "")')"
       [ -n "$TYPE" ] || { echo "运行时未提供兼容设备类型" >&2; exit 2; }
-      DEV="$(xcrun simctl create "ScanClean 测试" "$TYPE" "$RT")"
+      DEV="$(xcrun simctl create "ClearPaper 测试" "$TYPE" "$RT")"
     fi
     echo "已创建模拟器设备：$DEV ($TYPE)"
   fi
@@ -40,15 +40,15 @@ fi
 swiftc -parse-as-library -O -disable-sandbox \
   -target arm64-apple-ios16.0-simulator -sdk "$SDK" \
   -framework SwiftUI -framework UIKit -framework PDFKit -framework ImageIO \
-  -o "$STAGE/ScanClean" "$TOOLS/engine/Core.swift" "$TOOLS/ios/App.swift"
+  -o "$STAGE/ClearPaper" "$TOOLS/engine/Core.swift" "$TOOLS/ios/App.swift"
 
 cp "$TOOLS/ios/sim_info.plist" "$STAGE/Info.plist"
 echo -n "APPL????" > "$STAGE/PkgInfo"
 /usr/bin/plutil -lint "$STAGE/Info.plist" >/dev/null
 
 xcrun simctl install "$BOOTED" "$STAGE"
-xcrun simctl launch "$BOOTED" com.local.scanpdf.ios >/dev/null
-echo "已安装并启动模拟器：$BOOTED  (com.local.scanpdf.ios)"
+xcrun simctl launch "$BOOTED" com.jpruby.clearpaper.ios >/dev/null
+echo "已安装并启动模拟器：$BOOTED  (com.jpruby.clearpaper.ios)"
 if [ -n "$SHOT" ]; then
   sleep 2
   xcrun simctl io "$BOOTED" screenshot "$SHOT"

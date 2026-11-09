@@ -3,7 +3,7 @@ import PDFKit
 import QuartzCore
 import UniformTypeIdentifiers
 
-// 试卷清晰化 · macOS 原生版
+// ClearPaper · macOS 原生版
 // 清理引擎（engine/Core.swift 的 ScanCore）直接编译进本包，桌面端零依赖、全离线。
 // UI 采用「侧边栏 + 内容卡片」布局：处理 / 设置 / 帮助。
 
@@ -714,7 +714,7 @@ func presentAbout() {
     let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
                        styleMask: [.titled, .closable],
                        backing: .buffered, defer: false)
-    win.title = "关于 试卷清晰化"
+    win.title = "关于 ClearPaper"
     win.isReleasedWhenClosed = false
     let box = NSBox()
     box.boxType = .custom
@@ -731,7 +731,7 @@ func presentAbout() {
     icon.layer?.cornerRadius = 18
     icon.layer?.cornerCurve = .continuous
 
-    let name = NSTextField(labelWithString: "试卷清晰化")
+    let name = NSTextField(labelWithString: "ClearPaper")
     name.font = .systemFont(ofSize: 20, weight: .bold)
     let ver = NSTextField(labelWithString:
         "版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")"
@@ -745,7 +745,7 @@ func presentAbout() {
     desc.alignment = .center
     desc.lineBreakMode = .byWordWrapping
     desc.maximumNumberOfLines = 0
-    let copy = NSTextField(labelWithString: "全离线运行 · 不上传任何文件 · 数据只在本机")
+    let copy = NSTextField(labelWithString: "© 2026 jpruby · 全离线运行 · 不上传任何文件")
     copy.font = .systemFont(ofSize: 11)
     copy.textColor = .tertiaryLabelColor
 
@@ -815,7 +815,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
 
     func buildMenu() {
         let main = NSMenu()
-        let appName = "试卷清晰化"
+        let appName = "ClearPaper"
 
         let appMenu = NSMenu(title: appName)
         appMenu.addItem(NSMenuItem(title: "关于 \(appName)", action: #selector(about), keyEquivalent: ""))
@@ -888,7 +888,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
     func applicationDidFinishLaunching(_ note: Notification) {
         buildMenu()
 
-        window.title = "试卷清晰化"
+        window.title = "ClearPaper"
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
         window.titlebarAppearsTransparent = true
@@ -982,7 +982,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         icon.layer?.cornerCurve = .continuous
         icon.layer?.masksToBounds = true
 
-        let name = label("试卷清晰化", 16, .bold, T.ink)
+        let name = label("ClearPaper", 16, .bold, T.ink)
         let by = label("by jpruby", 11.5, .medium, T.mute)
         let titles = vstack([name, by], spacing: 1)
         let head = hstack([icon, titles], spacing: 11, alignment: .centerY)
@@ -1097,8 +1097,8 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
     }
 
     func buildProcessPage(_ page: PageScroll) {
-        page.addFull(pageHeader("试卷清晰化",
-                                "扫描 / 拍照的试卷 → 可直接打印的 A4 清晰版 · 全离线",
+        page.addFull(pageHeader("ClearPaper",
+                                "试卷清晰化 · 扫描 / 拍照 → 可直接打印的 A4 清晰版 · 全离线",
                                 badge: "全离线"))
 
         // 拖拽区
@@ -1257,7 +1257,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         page.addFull(sectionHeader("关于"))
         let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         let aboutRow = settingRow(icon: "info.circle",
-                                  title: "试卷清晰化 \(ver)",
+                                  title: "ClearPaper \(ver)",
                                   subtitle: label("github.com/jpruby0127/ClearPaper", 11.5, .regular, T.sub),
                                   accessory: smallButton("打开", #selector(openRepo)))
         page.addFull(Card(aboutRow, padding: NSEdgeInsets(top: 4, left: 16, bottom: 4, right: 16)))
@@ -1489,7 +1489,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         let scoped = src.startAccessingSecurityScopedResource()
         defer { if scoped { src.stopAccessingSecurityScopedResource() } }
         let inbox = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("试卷扫描清晰化/Inbox", isDirectory: true)
+            .appendingPathComponent("ClearPaper/Inbox", isDirectory: true)
         try? fm.createDirectory(at: inbox, withIntermediateDirectories: true)
         let dst = inbox.appendingPathComponent("\(UUID().uuidString)-\(src.lastPathComponent)")
         return (try? fm.copyItem(at: src, to: dst)) != nil ? dst : src

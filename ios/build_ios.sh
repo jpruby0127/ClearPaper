@@ -10,7 +10,7 @@ TOOLS="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT="$1"
 ICON_SET="$TOOLS/ios/icons"
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
-STAGE="$(mktemp -d)/Payload/ScanClean.app"
+STAGE="$(mktemp -d)/Payload/ClearPaper.app"
 mkdir -p "$STAGE"
 
 [ -d "$ICON_SET" ] || { echo "缺少图标集：$ICON_SET" >&2; exit 1; }
@@ -20,20 +20,20 @@ mkdir -p "$STAGE"
 swiftc -parse-as-library -O -disable-sandbox \
   -target arm64-apple-ios16.0 -sdk "$SDK" \
   -framework SwiftUI -framework UIKit -framework PDFKit -framework ImageIO \
-  -o "$STAGE/ScanClean" "$TOOLS/engine/Core.swift" "$TOOLS/ios/App.swift"
+  -o "$STAGE/ClearPaper" "$TOOLS/engine/Core.swift" "$TOOLS/ios/App.swift"
 
 cat > "$STAGE/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleExecutable</key><string>ScanClean</string>
-  <key>CFBundleIdentifier</key><string>com.local.scanpdf.ios</string>
-  <key>CFBundleName</key><string>试卷清晰化</string>
-  <key>CFBundleDisplayName</key><string>试卷清晰化</string>
+  <key>CFBundleExecutable</key><string>ClearPaper</string>
+  <key>CFBundleIdentifier</key><string>com.jpruby.clearpaper.ios</string>
+  <key>CFBundleName</key><string>ClearPaper</string>
+  <key>CFBundleDisplayName</key><string>ClearPaper</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.2.1</string>
-  <key>CFBundleVersion</key><string>4</string>
+  <key>CFBundleShortVersionString</key><string>1.4.0</string>
+  <key>CFBundleVersion</key><string>5</string>
   <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
   <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
   <key>DTPlatformName</key><string>iphoneos</string>
@@ -86,11 +86,11 @@ for f in AppIcon60x60@2x.png AppIcon60x60@3x.png AppIcon76x76@2x.png AppIcon83.5
 done
 
 /usr/bin/plutil -lint "$STAGE/Info.plist" >/dev/null
-file "$STAGE/ScanClean" | grep -q "arm64" || { echo "编译产物不是 arm64" >&2; exit 1; }
+file "$STAGE/ClearPaper" | grep -q "arm64" || { echo "编译产物不是 arm64" >&2; exit 1; }
 
 PKG="$(mktemp -d)"
 mkdir -p "$PKG/Payload"
-cp -R "$STAGE" "$PKG/Payload/ScanClean.app"
+cp -R "$STAGE" "$PKG/Payload/ClearPaper.app"
 mkdir -p "$(dirname "$OUT")"
 rm -f "$OUT"
 cd "$PKG"

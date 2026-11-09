@@ -4,7 +4,7 @@
   <img src="docs/screenshots/logo.png" width="120" alt="ClearPaper 图标">
 </p>
 
-<h1 align="center">试卷清晰化 · ClearPaper</h1>
+<h1 align="center">ClearPaper</h1>
 
 <p align="center">
   <b>把模糊、发黑、带扫描边框的试卷 PDF，一键变成能直接打印的清晰 A4 版。</b><br>
@@ -38,7 +38,7 @@
 
 <p align="center">
   <img src="docs/screenshots/mac-ui.png" width="760" alt="macOS 界面">
-  <br><sub>macOS 1.3：侧边栏 + 卡片式布局，处理 / 设置 / 帮助</sub>
+  <br><sub>ClearPaper：侧边栏 + 卡片式布局，处理 / 设置 / 帮助</sub>
 </p>
 
 同一页试卷，左边是参考用的 Python 引擎、右边是编译进 App 的 Swift 端上引擎——**两者输出一致**，说明手机/电脑里跑的就是同一套算法：
@@ -63,7 +63,7 @@ iPhone 上的处理结果卡片（全离线，导入 PDF → 本机处理 → �
 
 ### macOS · 拖进应用程序即可用
 
-1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ScanClean-macOS-1.3.1.dmg`**；
+1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ClearPaper-macOS-1.4.0.dmg`**；
 2. 打开 DMG，把「试卷清晰化」拖进「应用程序」；
 3. 首次打开若被拦截：右键 App → 「打开」→「打开」。
 
@@ -75,7 +75,7 @@ App 自带清晰化引擎，**朋友电脑不需要 Python、venv 或任何配�
 
 ### iPhone / iPad · 自签一次，永久可用
 
-1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ScanClean-iOS-1.2.1-unsigned.ipa`**；
+1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ClearPaper-iOS-1.4.0-unsigned.ipa`**；
 2. 电脑装 [Sideloadly](https://sideloadly.io/)（或 AltStore），连上 iPhone，选这个 IPA，填你的 Apple ID 自签；
 3. 手机：「设置 → 通用 → VPN 与设备管理」信任该开发者；
 4. 微信里收到试卷 →「用其他应用打开」→ 选「试卷清晰化」；或在 App 内点「导入试卷 PDF」。
@@ -134,7 +134,7 @@ cd macos
 
 ```bash
 cd ios
-./build_ios.sh ../ScanClean-iOS-unsigned.ipa
+./build_ios.sh ../ClearPaper-iOS-unsigned.ipa
 ```
 
 跑模拟器看效果：
@@ -170,8 +170,8 @@ pip install pymupdf numpy pillow scipy
 
 | 版本 | 平台 | 产物 | 说明 |
 |---|---|---|---|
-| v1.3.1 | macOS | `ScanClean-macOS-1.3.1.dmg` | 全新侧边栏 UI；多份合并 + 横向 A4 修复 |
-| v1.2.1 | iOS | `ScanClean-iOS-1.2.1-unsigned.ipa` | 原生 App，全离线，需自签安装 |
+| v1.4.0 | macOS | `ClearPaper-macOS-1.4.0.dmg` | 新 Logo + 品牌更名 ClearPaper；侧边栏 UI |
+| v1.4.0 | iOS | `ClearPaper-iOS-1.4.0-unsigned.ipa` | 新 Logo；原生 App，全离线，需自签安装 |
 | v1.0.1 | Windows | `ScanClean-Windows-portable.zip` | 免安装便携包，内置 Python 与依赖，拖拽即用 |
 
 > 当前分发用的是本机 **Apple Development** 证书：Mac DMG 在本人/同账号下双击即开；发给他人建议用 **Developer ID** 重签并 `notarytool` 公证（命令已就绪，无需改代码）。iOS 个人账号签名 7 天有效。
