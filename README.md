@@ -73,6 +73,14 @@ App 自带清晰化引擎，**朋友电脑不需要 Python、venv 或任何配�
 
 > 个人免费账号签名 **7 天**有效，到期重签一次即可；文件都在手机本机，不会丢。
 
+### Windows · 解压即用（免安装）
+
+1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ScanClean-Windows-portable.zip`**；
+2. 解压整个 `ScanClean` 文件夹（别只拖出单个文件）；
+3. 把试卷 PDF 拖到 `ScanClean.bat` 上（可一次多个），结果出现在原文件旁：`<原名>-清晰版.pdf`。
+
+内置 Python 与全部依赖，**不写注册表、不联网、删文件夹即卸载**；首次运行若被 SmartScreen 拦，点「更多信息 → 仍要运行」。支持 Win10 / Win11 64 位。
+
 ## 🧠 它自动判断并处理了什么
 
 | 检测到的毛病 | 处理方式 |
@@ -154,6 +162,7 @@ pip install pymupdf numpy pillow scipy
 |---|---|---|---|
 | v1.1 | macOS | `ScanClean-macOS-1.1.dmg` | 原生 App，已签名 + 强化运行时，拖拽即装 |
 | v1.2 | iOS | `ScanClean-iOS-1.2-unsigned.ipa` | 原生 App，全离线，需自签安装 |
+| v1.0 | Windows | `ScanClean-Windows-portable.zip` | 免安装便携包，内置 Python 与依赖，拖拽即用 |
 
 > 当前分发用的是本机 **Apple Development** 证书：Mac DMG 在本人/同账号下双击即开；发给他人建议用 **Developer ID** 重签并 `notarytool` 公证（命令已就绪，无需改代码）。iOS 个人账号签名 7 天有效。
 

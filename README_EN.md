@@ -73,6 +73,14 @@ The app bundles its own engine — **no Python, venv, or config needed** on the 
 
 > Free personal signatures last **7 days**; re-sign once when expired. Files stay on the device.
 
+### Windows · portable, no install
+
+1. Download **`ScanClean-Windows-portable.zip`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
+2. Extract the whole `ScanClean` folder (not just a single file);
+3. Drag PDFs onto `ScanClean.bat` (several at once); results land next to each source as `<name>-清晰版.pdf`.
+
+Python and all dependencies are bundled — **no registry, no network, delete the folder to uninstall**. If SmartScreen blocks the first run, click "More info → Run anyway". Windows 10/11 64-bit.
+
 ## 🧠 What it detects & fixes
 
 | Detected issue | Fix |
@@ -154,6 +162,7 @@ Issues and PRs welcome — let's make this a real open-source gem together.
 |---|---|---|---|
 | v1.1 | macOS | `ScanClean-macOS-1.1.dmg` | Native app, signed + hardened runtime, drag-to-install |
 | v1.2 | iOS | `ScanClean-iOS-1.2-unsigned.ipa` | Native app, fully on-device, self-sign to install |
+| v1.0 | Windows | `ScanClean-Windows-portable.zip` | Portable, bundled Python + deps, drag-and-drop |
 
 > Current distribution uses a local **Apple Development** certificate: the Mac DMG opens on the same account; for others, re-sign with a **Developer ID** and notarize via `notarytool` (command ready, no code change). iOS free signatures last 7 days.
 
