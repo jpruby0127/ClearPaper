@@ -3,13 +3,13 @@
 # 需要 dmgbuild（pip install dmgbuild）与 macOS 的 hdiutil。
 #
 # 用法：
-#   ./macos/build_dmg.sh                 # 输出 dist/ScanClean-macOS-1.2.1.dmg
+#   ./macos/build_dmg.sh                 # 输出 dist/ScanClean-macOS-1.3.0.dmg
 #   ./macos/build_dmg.sh out.dmg         # 指定输出
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-OUT="${1:-$ROOT/dist/ScanClean-macOS-1.2.1.dmg}"
+OUT="${1:-$ROOT/dist/ScanClean-macOS-1.3.0.dmg}"
 VOLNAME="试卷清晰化"
 APPNAME="试卷扫描清晰化"
 

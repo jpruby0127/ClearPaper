@@ -1,22 +1,20 @@
 import AppKit
 import PDFKit
+import QuartzCore
 import UniformTypeIdentifiers
 
-// 试卷扫描清晰化 · macOS 原生版
-// 清理引擎（ios/Core.swift 的 ScanCore）直接编译进本包，桌面端零依赖、全离线。
-// 输出目录默认在沙盒 Documents/试卷清晰版；用户可在「文件」菜单里改到任意文件夹
-// （通过安全作用域书签持久化），因此本 app 完全符合 Mac App Store 沙盒要求。
+// 试卷清晰化 · macOS 原生版
+// 清理引擎（engine/Core.swift 的 ScanCore）直接编译进本包，桌面端零依赖、全离线。
+// UI 采用「侧边栏 + 内容卡片」布局：处理 / 设置 / 帮助。
 
 // MARK: - 多份合并
 
-/// 输出方式：分别保存 / 完全合并 / 间隔合并（双面打印不跨卷）。
 enum MergeMode: Int {
     case separate = 0
     case full = 1
     case duplex = 2
 }
 
-/// 造一张指定大小的空白 PDF 页（用于间隔合并补页）。
 func blankPDFPage(size: CGSize) -> PDFPage? {
     let data = NSMutableData()
     guard let consumer = CGDataConsumer(data: data as CFMutableData) else { return nil }
@@ -29,18 +27,13 @@ func blankPDFPage(size: CGSize) -> PDFPage? {
     return doc.page(at: 0)
 }
 
-/// 按给定顺序合并 PDF。
-/// - `full`：首尾直接相接。
-/// - `duplex`：除最后一份外，每份若为奇数页就补一张同尺寸空白页，
-///   保证下一份总从新的一张纸正面开始，双面打印时不同试卷不会落在同一张纸上。
-/// 返回合并后的总页数；失败返回 0。
+/// 按顺序合并；duplex 模式下为每份非末尾文档补齐到偶数页（补空白页）。
 func mergePDFs(_ urls: [URL], mode: MergeMode, to out: URL) -> Int {
     let merged = PDFDocument()
     for (idx, url) in urls.enumerated() {
         guard let doc = PDFDocument(url: url) else { continue }
         let n = doc.pageCount
         guard n > 0 else { continue }
-        // 先记下末页尺寸：页面被移入 merged 后就不好再取了
         let lastSize = doc.page(at: n - 1)?.bounds(for: .mediaBox).size
             ?? CGSize(width: 595.28, height: 841.89)
         for i in 0..<n {
@@ -70,7 +63,6 @@ final class OutputStore {
 
     init() {
         let fm = FileManager.default
-        // 自动化 / 高级用户可用 SCANPDF_OUTDIR 覆盖输出目录（不持久化）。
         if let env = ProcessInfo.processInfo.environment["SCANPDF_OUTDIR"], !env.isEmpty {
             let u = URL(fileURLWithPath: env, isDirectory: true)
             url = u
@@ -92,7 +84,6 @@ final class OutputStore {
         try? fm.createDirectory(at: url, withIntermediateDirectories: true)
     }
 
-    /// 让用户挑一个真实文件夹（NSOpenPanel → 安全作用域书签），写入即可被沙盒放行。
     func choose() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -116,157 +107,462 @@ final class OutputStore {
     func stopAccessing() { if scoped { url.stopAccessingSecurityScopedResource() } }
 }
 
-// MARK: - 小组件
+// MARK: - 设计令牌（参考 Purrge 的浅色/深色体系）
 
-/// 圆角状态药丸，与系统工具类 app 的配色一致。
-final class Pill: NSView {
+enum T {
+    static func dyn(_ light: NSColor, _ dark: NSColor) -> NSColor {
+        NSColor(name: nil) { app in
+            app.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        }
+    }
+    static func hex(_ v: UInt32) -> NSColor {
+        NSColor(srgbRed: CGFloat((v >> 16) & 0xFF) / 255,
+                green: CGFloat((v >> 8) & 0xFF) / 255,
+                blue: CGFloat(v & 0xFF) / 255, alpha: 1)
+    }
+
+    static let canvas    = dyn(hex(0xF6F7F9), hex(0x0F1115))
+    static let sidebar   = dyn(hex(0xF1F2F4), hex(0x0E1014))
+    static let panel     = dyn(hex(0xFFFFFF), hex(0x171A20))
+    static let panel2    = dyn(hex(0xFAFBFC), hex(0x1B1F26))
+    static let ink       = dyn(hex(0x14171C), hex(0xEEF0F4))
+    static let ink2      = dyn(hex(0x3D434D), hex(0xC9CED6))
+    static let sub       = dyn(hex(0x6B7280), hex(0x9AA2AE))
+    static let mute      = dyn(hex(0x9AA1AD), hex(0x6D7480))
+    static let line      = dyn(hex(0xE9EBEF), hex(0x262A32))
+    static let line2     = dyn(hex(0xF1F2F5), hex(0x20242B))
+    static let graySoft  = dyn(hex(0xF1F2F4), hex(0x20242B))
+    static let amber     = dyn(hex(0xE08A00), hex(0xF0A83C))
+    static let amberSoft = dyn(hex(0xFFF3DC), hex(0x2E2412))
+    static let green     = dyn(hex(0x12A374), hex(0x35C79B))
+    static let greenSoft = dyn(hex(0xE6F6F0), hex(0x11291F))
+    static let blue      = dyn(hex(0x2F6BFF), hex(0x6B9BFF))
+    static let blueSoft  = dyn(hex(0xEAF0FF), hex(0x18233D))
+    static let red       = dyn(hex(0xE5484D), hex(0xFF6B6F))
+    static let redSoft   = dyn(hex(0xFDECEC), hex(0x321A1C))
+
+    static let cardR: CGFloat = 14
+    static let sidebarW: CGFloat = 236
+}
+
+// MARK: - 基础小组件
+
+class ColorView: NSView {
+    var color: NSColor = .clear { didSet { needsDisplay = true } }
+    init(color: NSColor = .clear) {
+        self.color = color
+        super.init(frame: .zero)
+        wantsLayer = true
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() { layer?.backgroundColor = color.cgColor }
+}
+
+final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
+}
+
+func label(_ text: String, _ size: CGFloat, _ weight: NSFont.Weight = .regular,
+           _ color: NSColor = T.ink) -> NSTextField {
+    let l = NSTextField(labelWithString: text)
+    l.font = .systemFont(ofSize: size, weight: weight)
+    l.textColor = color
+    return l
+}
+
+func hstack(_ views: [NSView], spacing: CGFloat = 8,
+            alignment: NSLayoutConstraint.Attribute = .centerY) -> NSStackView {
+    let s = NSStackView(views: views)
+    s.orientation = .horizontal
+    s.alignment = alignment
+    s.spacing = spacing
+    s.translatesAutoresizingMaskIntoConstraints = false
+    return s
+}
+
+func vstack(_ views: [NSView], spacing: CGFloat = 10,
+            alignment: NSLayoutConstraint.Attribute = .leading) -> NSStackView {
+    let s = NSStackView(views: views)
+    s.orientation = .vertical
+    s.alignment = alignment
+    s.spacing = spacing
+    s.translatesAutoresizingMaskIntoConstraints = false
+    return s
+}
+
+func spacer() -> NSView {
+    let v = NSView()
+    v.translatesAutoresizingMaskIntoConstraints = false
+    v.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    v.setContentHuggingPriority(.defaultLow, for: .vertical)
+    return v
+}
+
+func iconBox(_ name: String, size: CGFloat = 34, radius: CGFloat = 9,
+             tint: NSColor = T.ink2, bg: NSColor = T.graySoft,
+             point: CGFloat = 15) -> NSView {
+    let box = ColorView(color: bg)
+    box.translatesAutoresizingMaskIntoConstraints = false
+    box.layer?.cornerRadius = radius
+    box.layer?.cornerCurve = .continuous
+    let iv = NSImageView()
+    iv.image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+    iv.symbolConfiguration = .init(pointSize: point, weight: .medium)
+    iv.contentTintColor = tint
+    iv.imageScaling = .scaleProportionallyDown
+    iv.translatesAutoresizingMaskIntoConstraints = false
+    box.addSubview(iv)
+    NSLayoutConstraint.activate([
+        box.widthAnchor.constraint(equalToConstant: size),
+        box.heightAnchor.constraint(equalToConstant: size),
+        iv.centerXAnchor.constraint(equalTo: box.centerXAnchor),
+        iv.centerYAnchor.constraint(equalTo: box.centerYAnchor),
+    ])
+    return box
+}
+
+func chip(_ text: String, fg: NSColor, bg: NSColor) -> NSView {
+    let v = ColorView(color: bg)
+    v.translatesAutoresizingMaskIntoConstraints = false
+    v.layer?.cornerRadius = 7
+    v.layer?.cornerCurve = .continuous
+    let l = label(text, 10.5, .semibold, fg)
+    l.translatesAutoresizingMaskIntoConstraints = false
+    v.addSubview(l)
+    NSLayoutConstraint.activate([
+        l.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 7),
+        l.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -7),
+        l.topAnchor.constraint(equalTo: v.topAnchor, constant: 2),
+        l.bottomAnchor.constraint(equalTo: v.bottomAnchor, constant: -2),
+    ])
+    return v
+}
+
+/// 圆角卡片，带细边框与很浅的阴影。
+final class Card: NSView {
+    init(_ content: NSView,
+         padding: NSEdgeInsets = NSEdgeInsets(top: 18, left: 20, bottom: 18, right: 20),
+         radius: CGFloat = T.cardR) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = radius
+        layer?.cornerCurve = .continuous
+        layer?.borderWidth = 1
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = 0.05
+        layer?.shadowRadius = 10
+        layer?.shadowOffset = CGSize(width: 0, height: 2)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padding.left),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -padding.right),
+            content.topAnchor.constraint(equalTo: topAnchor, constant: padding.top),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -padding.bottom),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {
+        layer?.backgroundColor = T.panel.cgColor
+        layer?.borderColor = T.line.cgColor
+    }
+}
+
+/// 可滚动页面：内容从顶部开始。
+final class PageScroll: NSScrollView {
+    let stack = NSStackView()
+
+    init() {
+        super.init(frame: .zero)
+        drawsBackground = false
+        hasVerticalScroller = true
+        autohidesScrollers = true
+        borderType = .noBorder
+
+        let doc = FlippedView()
+        doc.translatesAutoresizingMaskIntoConstraints = false
+        documentView = doc
+
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 18
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        doc.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            doc.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            doc.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            doc.topAnchor.constraint(equalTo: contentView.topAnchor),
+            doc.widthAnchor.constraint(equalTo: contentView.widthAnchor),
+            stack.leadingAnchor.constraint(equalTo: doc.leadingAnchor, constant: 36),
+            stack.trailingAnchor.constraint(equalTo: doc.trailingAnchor, constant: -36),
+            stack.topAnchor.constraint(equalTo: doc.topAnchor, constant: 54),
+            stack.bottomAnchor.constraint(equalTo: doc.bottomAnchor, constant: -28),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func addFull(_ v: NSView) {
+        v.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(v)
+        v.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+    }
+}
+
+// MARK: - 侧边栏
+
+enum StatusTone {
+    case neutral, busy, ok, bad
+    var color: NSColor {
+        switch self {
+        case .neutral: return T.mute
+        case .busy: return T.amber
+        case .ok: return T.green
+        case .bad: return T.red
+        }
+    }
+}
+
+final class StatusPill: ColorView {
+    private let dot = ColorView()
+    private let textLabel = NSTextField(labelWithString: "就绪")
+    var tone: StatusTone = .ok { didSet { needsDisplay = true } }
+    var text: String {
+        get { textLabel.stringValue }
+        set { textLabel.stringValue = newValue }
+    }
+
+    init() {
+        super.init(color: T.graySoft)
+        layer?.cornerRadius = 9
+        layer?.cornerCurve = .continuous
+
+        dot.translatesAutoresizingMaskIntoConstraints = false
+        dot.color = T.green
+        dot.layer?.cornerRadius = 4
+        dot.layer?.cornerCurve = .continuous
+        textLabel.font = .systemFont(ofSize: 11.5, weight: .semibold)
+        textLabel.textColor = T.ink2
+        textLabel.lineBreakMode = .byTruncatingTail
+        textLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(dot); addSubview(textLabel)
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 32),
+            dot.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            dot.centerYAnchor.constraint(equalTo: centerYAnchor),
+            dot.widthAnchor.constraint(equalToConstant: 8),
+            dot.heightAnchor.constraint(equalToConstant: 8),
+            textLabel.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 8),
+            textLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            textLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func updateLayer() {
+        super.updateLayer()
+        dot.color = tone.color
+        textLabel.textColor = T.ink2
+    }
+}
+
+final class NavRow: NSView {
+    private let iconView = NSImageView()
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let badge = NSTextField(labelWithString: "")
+    private var hover = false
+    var onTap: (() -> Void)?
+    var isSelected = false { didSet { needsDisplay = true } }
+    var badgeText: String = "" {
+        didSet {
+            badge.stringValue = badgeText
+            badge.isHidden = badgeText.isEmpty
+        }
+    }
+
+    init(symbol: String, title: String) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 9
+        layer?.cornerCurve = .continuous
+
+        iconView.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        iconView.symbolConfiguration = .init(pointSize: 15, weight: .medium)
+        iconView.imageScaling = .scaleProportionallyDown
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+
+        titleLabel.stringValue = title
+        titleLabel.font = .systemFont(ofSize: 13.5, weight: .medium)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        badge.font = .systemFont(ofSize: 10.5, weight: .semibold)
+        badge.textColor = T.mute
+        badge.alignment = .right
+        badge.isHidden = true
+        badge.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(iconView); addSubview(titleLabel); addSubview(badge)
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: 36),
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 20),
+            iconView.heightAnchor.constraint(equalToConstant: 18),
+            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            badge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            badge.centerYAnchor.constraint(equalTo: centerYAnchor),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: badge.leadingAnchor, constant: -6),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {
+        layer?.backgroundColor = (isSelected || hover) ? T.graySoft.cgColor : NSColor.clear.cgColor
+        iconView.contentTintColor = isSelected ? T.amber : T.sub
+        titleLabel.textColor = isSelected ? T.ink : T.ink2
+        titleLabel.font = .systemFont(ofSize: 13.5, weight: isSelected ? .semibold : .medium)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for a in trackingAreas { removeTrackingArea(a) }
+        addTrackingArea(NSTrackingArea(rect: bounds,
+                                       options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+    override func mouseEntered(with event: NSEvent) { hover = true; needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { hover = false; needsDisplay = true }
+    override func mouseDown(with event: NSEvent) { onTap?() }
+}
+
+final class DiskBar: NSView {
+    var fraction: CGFloat = 0 { didSet { needsDisplay = true } }
+    override func draw(_ dirtyRect: NSRect) {
+        let h = bounds.height, r = h / 2
+        T.line2.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: r, yRadius: r).fill()
+        let w = max(0, min(1, fraction)) * bounds.width
+        if w > 0.5 {
+            T.mute.setFill()
+            NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: w, height: h),
+                         xRadius: r, yRadius: r).fill()
+        }
+    }
+}
+
+// MARK: - 主按钮
+
+final class PrimaryButton: NSControl {
     private let label = NSTextField(labelWithString: "")
-    var text = "" { didSet { label.stringValue = text; invalidateIntrinsicContentSize() } }
-    var tone: NSColor = .secondaryLabelColor { didSet { needsDisplay = true } }
+    var titleText: String = "" {
+        didSet {
+            label.stringValue = titleText
+            setAccessibilityLabel(titleText)
+        }
+    }
 
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        layer?.cornerRadius = 10
+        layer?.cornerCurve = .continuous
+        translatesAutoresizingMaskIntoConstraints = false
+        setAccessibilityRole(.button)
+
+        label.font = .systemFont(ofSize: 13.5, weight: .semibold)
+        label.alignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
         NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: centerXAnchor),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
-            widthAnchor.constraint(equalToConstant: 64),
-            heightAnchor.constraint(equalToConstant: 20),
-        ])
-    }
-    required init?(coder: NSCoder) { fatalError() }
-    override func updateLayer() {
-        layer?.cornerRadius = 10
-        layer?.backgroundColor = tone.withAlphaComponent(0.16).cgColor
-        label.textColor = tone
-    }
-}
-
-final class RowCell: NSTableCellView {
-    let badge = NSImageView()
-    let name = NSTextField(labelWithString: "")
-    let meta = NSTextField(labelWithString: "")
-    let pill = Pill()
-    let bar = NSProgressIndicator()
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        layer?.cornerRadius = 10
-
-        badge.image = NSImage(systemSymbolName: "doc.text.fill", accessibilityDescription: nil)
-        badge.symbolConfiguration = .init(pointSize: 15, weight: .semibold)
-        badge.contentTintColor = .white
-        badge.wantsLayer = true
-        badge.layer?.cornerRadius = 7
-        badge.layer?.backgroundColor = NSColor.systemRed.withAlphaComponent(0.85).cgColor
-
-        name.font = .systemFont(ofSize: 13, weight: .medium)
-        name.lineBreakMode = .byTruncatingMiddle
-        meta.font = .systemFont(ofSize: 11)
-        meta.textColor = .secondaryLabelColor
-        meta.lineBreakMode = .byTruncatingTail
-
-        bar.style = .bar
-        bar.controlSize = .small
-        bar.isIndeterminate = true
-        bar.isHidden = true
-
-        for v in [badge, name, meta, pill, bar] as [NSView] {
-            v.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(v)
-        }
-        NSLayoutConstraint.activate([
-            badge.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            badge.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -4),
-            badge.widthAnchor.constraint(equalToConstant: 30),
-            badge.heightAnchor.constraint(equalToConstant: 30),
-            name.leadingAnchor.constraint(equalTo: badge.trailingAnchor, constant: 10),
-            name.trailingAnchor.constraint(lessThanOrEqualTo: pill.leadingAnchor, constant: -10),
-            name.topAnchor.constraint(equalTo: badge.topAnchor, constant: 1),
-            meta.leadingAnchor.constraint(equalTo: name.leadingAnchor),
-            meta.trailingAnchor.constraint(equalTo: name.trailingAnchor),
-            meta.topAnchor.constraint(equalTo: name.bottomAnchor, constant: 2),
-            pill.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            pill.centerYAnchor.constraint(equalTo: badge.centerYAnchor),
-            bar.leadingAnchor.constraint(equalTo: name.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            bar.topAnchor.constraint(equalTo: meta.bottomAnchor, constant: 5),
-            bar.heightAnchor.constraint(equalToConstant: 4),
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    override var wantsUpdateLayer: Bool { true }
     override func updateLayer() {
-        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.045).cgColor
+        layer?.backgroundColor = (isEnabled ? T.ink : T.graySoft).cgColor
+        label.textColor = isEnabled ? T.panel : T.sub
     }
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
+    override var isEnabled: Bool { didSet { needsDisplay = true } }
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let p = convert(point, from: superview)
+        return bounds.contains(p) ? self : nil
+    }
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
+        layer?.backgroundColor = T.ink.withAlphaComponent(0.82).cgColor
+    }
+    override func mouseUp(with event: NSEvent) {
+        guard isEnabled else { return }
+        needsDisplay = true
+        let p = convert(event.locationInWindow, from: nil)
+        if bounds.contains(p) { sendAction(action, to: target) }
     }
 }
 
 // MARK: - 拖拽区
 
-final class DropView: NSView {
+final class DropCard: ColorView {
     var onDrop: (([URL]) -> Void)?
     var onPick: (() -> Void)?
-    var hover = false { didSet { needsDisplay = true } }
-    private let glyph = NSImageView()
-    private let title = NSTextField(labelWithString: "把 PDF 拖到这里")
-    private let hint = NSTextField(labelWithString: "扫描或拍照的试卷 · 支持一次多个")
-    private let pick = NSButton()
+    private var hover = false { didSet { needsDisplay = true } }
+    private let dash = CAShapeLayer()
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+    init() {
+        super.init(color: T.panel)
         registerForDraggedTypes([.fileURL])
-        wantsLayer = true
-        layer?.cornerRadius = 20
+        layer?.cornerRadius = T.cardR
+        layer?.cornerCurve = .continuous
+        dash.fillColor = NSColor.clear.cgColor
+        dash.lineWidth = 1.5
+        dash.lineDashPattern = [6, 4]
+        layer?.addSublayer(dash)
 
-        glyph.image = NSImage(systemSymbolName: "arrow.down.doc.fill", accessibilityDescription: nil)
-        glyph.symbolConfiguration = .init(pointSize: 32, weight: .semibold)
-        glyph.contentTintColor = .white
-        glyph.imageScaling = .scaleProportionallyDown
-        glyph.wantsLayer = true
-        glyph.layer?.cornerRadius = 16
-        glyph.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
-        title.font = .systemFont(ofSize: 17, weight: .semibold)
-        hint.font = .systemFont(ofSize: 12)
-        hint.textColor = .secondaryLabelColor
-        pick.title = "选择文件…"
+        let ic = iconBox("arrow.down.doc.fill", size: 44, radius: 12,
+                         tint: T.amber, bg: T.amberSoft, point: 20)
+        let title = label("把 PDF 拖到这里", 15, .semibold, T.ink)
+        let hint = label("支持一次多个 · 横向 / 竖向都行", 11.5, .regular, T.sub)
+        let pick = NSButton(title: "选择文件…", target: self, action: #selector(pickTapped))
         pick.bezelStyle = .rounded
-        pick.target = self
-        pick.action = #selector(pickFiles)
+        pick.controlSize = .small
+        pick.font = .systemFont(ofSize: 11.5, weight: .medium)
 
-        for v in [glyph, title, hint, pick] as [NSView] {
-            v.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(v)
-        }
+        let stack = vstack([ic, title, hint, pick], spacing: 7, alignment: .centerX)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
         NSLayoutConstraint.activate([
-            glyph.centerXAnchor.constraint(equalTo: centerXAnchor),
-            glyph.topAnchor.constraint(equalTo: topAnchor, constant: 20),
-            glyph.widthAnchor.constraint(equalToConstant: 64),
-            glyph.heightAnchor.constraint(equalToConstant: 64),
-            title.centerXAnchor.constraint(equalTo: centerXAnchor),
-            title.topAnchor.constraint(equalTo: glyph.bottomAnchor, constant: 12),
-            hint.centerXAnchor.constraint(equalTo: centerXAnchor),
-            hint.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 4),
-            pick.centerXAnchor.constraint(equalTo: centerXAnchor),
-            pick.topAnchor.constraint(equalTo: hint.bottomAnchor, constant: 14),
+            heightAnchor.constraint(equalToConstant: 132),
+            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 2),
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
 
-    @objc private func pickFiles() { onPick?() }
+    @objc private func pickTapped() { onPick?() }
 
+    override func layout() {
+        super.layout()
+        dash.frame = bounds
+        dash.path = CGPath(roundedRect: bounds.insetBy(dx: 0.75, dy: 0.75),
+                           cornerWidth: T.cardR, cornerHeight: T.cardR, transform: nil)
+    }
+
+    override var wantsUpdateLayer: Bool { true }
     override func updateLayer() {
-        layer?.backgroundColor = NSColor.controlAccentColor
-            .withAlphaComponent(hover ? 0.16 : 0.07).cgColor
-        layer?.borderWidth = hover ? 2 : 1
-        layer?.borderColor = NSColor.controlAccentColor
-            .withAlphaComponent(hover ? 0.9 : 0.25).cgColor
+        layer?.backgroundColor = (hover ? T.amberSoft.withAlphaComponent(0.35) : T.panel).cgColor
+        dash.strokeColor = (hover ? T.amber : T.amber.withAlphaComponent(0.45)).cgColor
     }
 
     override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation {
@@ -280,7 +576,6 @@ final class DropView: NSView {
         if !list.isEmpty { onDrop?(list) }
         return !list.isEmpty
     }
-
     private func pdfs(_ s: NSDraggingInfo) -> [URL] {
         let opts: [NSPasteboard.ReadingOptionKey: Any] =
             [.urlReadingContentsConformToTypes: [UTType.pdf.identifier]]
@@ -291,7 +586,7 @@ final class DropView: NSView {
     }
 }
 
-// MARK: - 队列模型
+// MARK: - 队列模型与行
 
 final class Job: NSObject {
     @objc var name = ""
@@ -301,13 +596,120 @@ final class Job: NSObject {
     var output: URL?
 }
 
-// MARK: - 关于 / 帮助窗口
+final class TagPill: ColorView {
+    private let label = NSTextField(labelWithString: "")
+    var text = "" { didSet { label.stringValue = text } }
+    var tone: NSColor = .secondaryLabelColor { didSet { needsDisplay = true } }
+
+    init() {
+        super.init(color: T.graySoft)
+        layer?.cornerRadius = 10
+        layer?.cornerCurve = .continuous
+        label.font = .systemFont(ofSize: 10.5, weight: .semibold)
+        label.alignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: 62),
+            heightAnchor.constraint(equalToConstant: 20),
+            label.centerXAnchor.constraint(equalTo: centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override func updateLayer() {
+        super.updateLayer()
+        layer?.backgroundColor = tone.withAlphaComponent(0.15).cgColor
+        label.textColor = tone
+    }
+}
+
+final class RowCell: NSTableCellView {
+    let name = NSTextField(labelWithString: "")
+    let meta = NSTextField(labelWithString: "")
+    let pill = TagPill()
+    let bar = NSProgressIndicator()
+    private let iconBox = ColorView(color: T.graySoft)
+    private let iconView = NSImageView()
+    private let sep = ColorView(color: T.line2)
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+
+        iconBox.translatesAutoresizingMaskIntoConstraints = false
+        iconBox.layer?.cornerRadius = 9
+        iconBox.layer?.cornerCurve = .continuous
+        iconView.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)
+        iconView.symbolConfiguration = .init(pointSize: 15, weight: .medium)
+        iconView.contentTintColor = T.ink2
+        iconView.imageScaling = .scaleProportionallyDown
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconBox.addSubview(iconView)
+
+        name.font = .systemFont(ofSize: 13, weight: .semibold)
+        name.textColor = T.ink
+        name.lineBreakMode = .byTruncatingTail
+        meta.font = .systemFont(ofSize: 11)
+        meta.textColor = T.sub
+        meta.lineBreakMode = .byTruncatingTail
+        let texts = vstack([name, meta], spacing: 1)
+        texts.translatesAutoresizingMaskIntoConstraints = false
+
+        pill.translatesAutoresizingMaskIntoConstraints = false
+
+        bar.style = .bar
+        bar.isIndeterminate = true
+        bar.controlSize = .small
+        bar.isHidden = true
+        bar.translatesAutoresizingMaskIntoConstraints = false
+
+        sep.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(iconBox); addSubview(texts); addSubview(pill); addSubview(bar); addSubview(sep)
+        NSLayoutConstraint.activate([
+            iconBox.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            iconBox.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconBox.widthAnchor.constraint(equalToConstant: 34),
+            iconBox.heightAnchor.constraint(equalToConstant: 34),
+            iconView.centerXAnchor.constraint(equalTo: iconBox.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconBox.centerYAnchor),
+
+            texts.leadingAnchor.constraint(equalTo: iconBox.trailingAnchor, constant: 10),
+            texts.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -3),
+            texts.trailingAnchor.constraint(lessThanOrEqualTo: pill.leadingAnchor, constant: -10),
+
+            pill.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            pill.centerYAnchor.constraint(equalTo: centerYAnchor),
+
+            bar.leadingAnchor.constraint(equalTo: texts.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: pill.leadingAnchor, constant: -10),
+            bar.topAnchor.constraint(equalTo: texts.bottomAnchor, constant: 3),
+
+            sep.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            sep.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            sep.bottomAnchor.constraint(equalTo: bottomAnchor),
+            sep.heightAnchor.constraint(equalToConstant: 1),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {
+        iconBox.color = T.graySoft
+        iconView.contentTintColor = T.ink2
+        name.textColor = T.ink
+        meta.textColor = T.sub
+        sep.color = T.line2
+    }
+}
+
+// MARK: - 关于 / 错误
 
 func presentAbout() {
-    let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 280),
+    let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
                        styleMask: [.titled, .closable],
                        backing: .buffered, defer: false)
-    win.title = "关于 试卷扫描清晰化"
+    win.title = "关于 试卷清晰化"
     win.isReleasedWhenClosed = false
     let box = NSBox()
     box.boxType = .custom
@@ -322,8 +724,9 @@ func presentAbout() {
     icon.imageScaling = .scaleProportionallyUpOrDown
     icon.wantsLayer = true
     icon.layer?.cornerRadius = 18
+    icon.layer?.cornerCurve = .continuous
 
-    let name = NSTextField(labelWithString: "试卷扫描清晰化")
+    let name = NSTextField(labelWithString: "试卷清晰化")
     name.font = .systemFont(ofSize: 20, weight: .bold)
     let ver = NSTextField(labelWithString:
         "版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")"
@@ -331,10 +734,12 @@ func presentAbout() {
     ver.font = .systemFont(ofSize: 11)
     ver.textColor = .secondaryLabelColor
     let desc = NSTextField(labelWithString:
-        "把扫描 / 拍照的试卷，转成可直接打印的 A4 清晰版。")
+        "把扫描 / 拍照的试卷，转成可直接打印的 A4 清晰版。\n支持多份按顺序合并，横向页面自动用横向 A4。")
     desc.font = .systemFont(ofSize: 12)
     desc.textColor = .secondaryLabelColor
+    desc.alignment = .center
     desc.lineBreakMode = .byWordWrapping
+    desc.maximumNumberOfLines = 0
     let copy = NSTextField(labelWithString: "全离线运行 · 不上传任何文件 · 数据只在本机")
     copy.font = .systemFont(ofSize: 11)
     copy.textColor = .tertiaryLabelColor
@@ -344,75 +749,19 @@ func presentAbout() {
         box.addSubview(v)
     }
     NSLayoutConstraint.activate([
-        icon.topAnchor.constraint(equalTo: box.topAnchor, constant: 28),
+        icon.topAnchor.constraint(equalTo: box.topAnchor, constant: 26),
         icon.centerXAnchor.constraint(equalTo: box.centerXAnchor),
-        icon.widthAnchor.constraint(equalToConstant: 80),
-        icon.heightAnchor.constraint(equalToConstant: 80),
-        name.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: 16),
+        icon.widthAnchor.constraint(equalToConstant: 76),
+        icon.heightAnchor.constraint(equalToConstant: 76),
+        name.topAnchor.constraint(equalTo: icon.bottomAnchor, constant: 14),
         name.centerXAnchor.constraint(equalTo: box.centerXAnchor),
         ver.topAnchor.constraint(equalTo: name.bottomAnchor, constant: 4),
         ver.centerXAnchor.constraint(equalTo: box.centerXAnchor),
-        desc.topAnchor.constraint(equalTo: ver.bottomAnchor, constant: 14),
-        desc.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 36),
-        desc.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -36),
-        copy.topAnchor.constraint(equalTo: desc.bottomAnchor, constant: 6),
+        desc.topAnchor.constraint(equalTo: ver.bottomAnchor, constant: 12),
+        desc.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 34),
+        desc.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -34),
+        copy.topAnchor.constraint(equalTo: desc.bottomAnchor, constant: 10),
         copy.centerXAnchor.constraint(equalTo: box.centerXAnchor),
-    ])
-    win.center()
-    win.makeKeyAndOrderFront(nil)
-}
-
-func presentHelp() {
-    let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 360),
-                       styleMask: [.titled, .closable],
-                       backing: .buffered, defer: false)
-    win.title = "使用帮助"
-    win.isReleasedWhenClosed = false
-    let scroll = NSScrollView()
-    scroll.translatesAutoresizingMaskIntoConstraints = false
-    scroll.hasVerticalScroller = true
-    scroll.drawsBackground = false
-    let text = NSTextView()
-    text.isEditable = false
-    text.isSelectable = true
-    text.font = .systemFont(ofSize: 13)
-    text.textContainerInset = NSSize(width: 18, height: 18)
-    text.string = """
-欢迎使用「试卷扫描清晰化」
-
-它能把老师发的扫描版 / 拍照版试卷，自动裁掉黑边、扶正、增强文字，输出成标准 A4、可直接打印的清晰 PDF。全部在你自己的电脑上完成，不上传任何文件。
-
-使用方法
-1. 把一份或多份试卷 PDF 拖进主窗口，或点「选择文件…」。
-2. 点击「开始处理」。处理进度会逐行显示。
-3. 完成后点「输出文件夹」打开结果所在的文件夹。
-
-输出去哪了？
-• 默认保存在 文稿 › 试卷清晰版。
-• 想改到别处（例如 桌面 或 U 盘），在顶部菜单「文件 › 选择输出文件夹…」里挑一个即可，下次自动记住。
-
-打印小贴士
-打印时选 A4、缩放「实际大小 / 100%」，不要选「适合页面」，效果最准。
-
-合并多份试卷
-• 把多份 PDF 按顺序加入队列，可拖动行调整顺序。
-• 「输出方式」里选：
-  · 分别保存：每份各存一个清晰版。
-  · 合并（完全）：按顺序首尾相接成一个 PDF。
-  · 合并（间隔·双面）：每份文档后补空白页，双面打印时不同试卷不会落在同一张纸上。
-
-支持
-• 一次拖入多份 PDF，会按顺序全部处理。
-• 双击已完成的一行，可直接打开对应的清晰版 PDF。
-• 把 PDF 直接拖到 Dock 上的 app 图标也能加入队列。
-"""
-    scroll.documentView = text
-    win.contentView = scroll
-    NSLayoutConstraint.activate([
-        scroll.topAnchor.constraint(equalTo: win.contentView!.topAnchor),
-        scroll.leadingAnchor.constraint(equalTo: win.contentView!.leadingAnchor),
-        scroll.trailingAnchor.constraint(equalTo: win.contentView!.trailingAnchor),
-        scroll.bottomAnchor.constraint(equalTo: win.contentView!.bottomAnchor),
     ])
     win.center()
     win.makeKeyAndOrderFront(nil)
@@ -429,36 +778,42 @@ func presentError(_ msg: String) {
 // MARK: - App
 
 final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate {
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 660),
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1060, height: 720),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
-    let drop = DropView(frame: .zero)
     let table = NSTableView()
     let empty = NSView()
-    let status = NSTextField(labelWithString: "全离线 · 拖入 PDF 即可")
-    let start = NSButton()
-    let openBtn = NSButton()
+    let status = NSTextField(labelWithString: "就绪")
+    let start = PrimaryButton()
     let mergePopup = NSPopUpButton()
+    let settingsMergePopup = NSPopUpButton()
+    let sidebarPill = StatusPill()
+    let outputPathLabel = NSTextField(labelWithString: "")
+    let countLabel = NSTextField(labelWithString: "")
+    let diskName = NSTextField(labelWithString: "Macintosh HD")
+    let diskFree = NSTextField(labelWithString: "")
+    let diskBar = DiskBar()
+
     var jobs: [Job] = []
     var busy = false
-    var queueMinH: NSLayoutConstraint!
-    var flex: NSView!
-    var queueBox: NSView!
+    var drop: DropCard!
+    var pages: [PageScroll] = []
+    var navRows: [NavRow] = []
+    var processingRow: NavRow?
+    var currentPage = 0
 
     var mergeMode: MergeMode {
         MergeMode(rawValue: mergePopup.indexOfSelectedItem) ?? .separate
     }
 
-    // MARK: 菜单栏
+    // MARK: 菜单
 
     func buildMenu() {
         let main = NSMenu()
-        let appName = Bundle.main.infoDictionary?["CFBundleName"] as? String ?? "App"
+        let appName = "试卷清晰化"
 
         let appMenu = NSMenu(title: appName)
-        let aboutItem = NSMenuItem(title: "关于 \(appName)", action: #selector(about), keyEquivalent: "")
-        let quit = NSMenuItem(title: "退出 \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        appMenu.addItem(aboutItem)
+        appMenu.addItem(NSMenuItem(title: "关于 \(appName)", action: #selector(about), keyEquivalent: ""))
         appMenu.addItem(.separator())
         let services = NSMenuItem(title: "服务", action: nil, keyEquivalent: "")
         services.submenu = NSApp.servicesMenu ?? NSMenu()
@@ -471,18 +826,17 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         appMenu.addItem(hideOthers)
         appMenu.addItem(NSMenuItem(title: "全部显示", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: ""))
         appMenu.addItem(.separator())
-        appMenu.addItem(quit)
+        appMenu.addItem(NSMenuItem(title: "退出 \(appName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         let appItem = NSMenuItem(title: appName, action: nil, keyEquivalent: "")
         appItem.submenu = appMenu
         main.addItem(appItem)
 
         let file = NSMenu(title: "文件")
-        let open = NSMenuItem(title: "打开 PDF…", action: #selector(pick), keyEquivalent: "o")
-        let chooseOut = NSMenuItem(title: "选择输出文件夹…", action: #selector(chooseOutput), keyEquivalent: "")
-        let openOut = NSMenuItem(title: "打开输出文件夹", action: #selector(reveal), keyEquivalent: "")
-        file.addItem(open)
-        file.addItem(chooseOut)
-        file.addItem(openOut)
+        file.addItem(NSMenuItem(title: "打开 PDF…", action: #selector(pick), keyEquivalent: "o"))
+        file.addItem(.separator())
+        file.addItem(NSMenuItem(title: "设置…", action: #selector(showSettings), keyEquivalent: ","))
+        file.addItem(NSMenuItem(title: "选择输出文件夹…", action: #selector(chooseOutput), keyEquivalent: ""))
+        file.addItem(NSMenuItem(title: "打开输出文件夹", action: #selector(reveal), keyEquivalent: ""))
         let fileItem = NSMenuItem(title: "文件", action: nil, keyEquivalent: "")
         fileItem.submenu = file
         main.addItem(fileItem)
@@ -511,7 +865,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         main.addItem(windowItem)
 
         let help = NSMenu(title: "帮助")
-        help.addItem(NSMenuItem(title: "使用帮助", action: #selector(showHelp), keyEquivalent: ""))
+        help.addItem(NSMenuItem(title: "使用帮助", action: #selector(showHelpPage), keyEquivalent: ""))
         help.addItem(NSMenuItem(title: "关于", action: #selector(about), keyEquivalent: ""))
         let helpItem = NSMenuItem(title: "帮助", action: nil, keyEquivalent: "")
         helpItem.submenu = help
@@ -521,216 +875,80 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
     }
 
     @objc func about() { presentAbout() }
-    @objc func showHelp() { presentHelp() }
+    @objc func showSettings() { showPage(1) }
+    @objc func showHelpPage() { showPage(2) }
 
     // MARK: 启动
 
     func applicationDidFinishLaunching(_ note: Notification) {
         buildMenu()
 
-        window.title = "试卷扫描清晰化"
+        window.title = "试卷清晰化"
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
         window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)
-        window.backgroundColor = .windowBackgroundColor
-        window.minSize = NSSize(width: 460, height: 560)
+        window.backgroundColor = T.canvas
+        window.minSize = NSSize(width: 940, height: 640)
         window.center()
 
-        let root = NSStackView()
-        root.orientation = .vertical
-        root.spacing = 16
-        root.edgeInsets = NSEdgeInsets(top: 26, left: 20, bottom: 18, right: 20)
-        root.translatesAutoresizingMaskIntoConstraints = false
-
-        let head = NSStackView()
-        head.orientation = .horizontal
-        head.spacing = 12
-        let icon = NSImageView()
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        if let url = Bundle.main.url(forResource: "Icon", withExtension: "icns"),
-           let art = NSImage(contentsOf: url) {
-            icon.image = art
-        } else {
-            icon.image = NSImage(systemSymbolName: "doc.text.magnifyingglass",
-                                 accessibilityDescription: nil)
-            icon.symbolConfiguration = .init(pointSize: 26, weight: .semibold)
-            icon.contentTintColor = .controlAccentColor
-        }
-        icon.imageScaling = .scaleProportionallyUpOrDown
-        icon.wantsLayer = true
-        icon.layer?.cornerRadius = 9
-        NSLayoutConstraint.activate([
-            icon.widthAnchor.constraint(equalToConstant: 40),
-            icon.heightAnchor.constraint(equalToConstant: 40),
-        ])
-        let titles = NSStackView()
-        titles.orientation = .vertical
-        titles.spacing = 2
-        titles.alignment = .leading
-        let t1 = NSTextField(labelWithString: "试卷扫描清晰化")
-        t1.font = .systemFont(ofSize: 16, weight: .bold)
-        let t2 = NSTextField(labelWithString: "扫描 / 拍照的试卷 → 可直接打印的 A4 清晰版 · 全离线")
-        t2.font = .systemFont(ofSize: 11.5)
-        t2.textColor = .secondaryLabelColor
-        titles.addArrangedSubview(t1); titles.addArrangedSubview(t2)
-
-        // 设置（选择输出文件夹）齿轮按钮
-        let gear = NSButton()
-        gear.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "设置")
-        gear.imageScaling = .scaleProportionallyDown
-        gear.bezelStyle = .regularSquare
-        gear.isBordered = false
-        gear.contentTintColor = .secondaryLabelColor
-        gear.target = self
-        gear.action = #selector(chooseOutput)
-        gear.toolTip = "选择输出文件夹"
-
-        head.addArrangedSubview(icon)
-        head.addArrangedSubview(titles)
-        head.addArrangedSubview(gear)
-        head.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        titles.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        gear.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-
-        drop.heightAnchor.constraint(equalToConstant: 190).isActive = true
-        drop.onDrop = { [weak self] in self?.enqueue($0) }
-        drop.onPick = { [weak self] in self?.pick() }
-
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
-        scroll.autohidesScrollers = true
-        table.style = .plain
-        table.rowHeight = 58
-        table.headerView = nil
-        table.backgroundColor = .clear
-        table.selectionHighlightStyle = .none
-        table.intercellSpacing = NSSize(width: 0, height: 8)
-        table.registerForDraggedTypes([.string])
-        table.draggingDestinationFeedbackStyle = .gap
-        table.dataSource = self
-        table.delegate = self
-        table.target = self
-        table.doubleAction = #selector(openResult)
-        table.addTableColumn(NSTableColumn(identifier: .init("row")))
-        scroll.documentView = table
-
-        let emptyGlyph = NSImageView()
-        emptyGlyph.image = NSImage(systemSymbolName: "tray", accessibilityDescription: nil)
-        emptyGlyph.symbolConfiguration = .init(pointSize: 28, weight: .light)
-        emptyGlyph.contentTintColor = .tertiaryLabelColor
-        let emptyText = NSTextField(labelWithString: "还没有文件\n拖入或选择 PDF 后点「开始处理」")
-        emptyText.font = .systemFont(ofSize: 12)
-        emptyText.textColor = .tertiaryLabelColor
-        emptyText.alignment = .center
-        empty.wantsLayer = true
-        empty.layer?.cornerRadius = 14
-        empty.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.03).cgColor
-        empty.layer?.borderWidth = 1
-        empty.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.6).cgColor
-        empty.addSubview(emptyGlyph); empty.addSubview(emptyText)
-        emptyGlyph.translatesAutoresizingMaskIntoConstraints = false
-        emptyText.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            emptyGlyph.centerXAnchor.constraint(equalTo: empty.centerXAnchor),
-            emptyGlyph.centerYAnchor.constraint(equalTo: empty.centerYAnchor, constant: -22),
-            emptyText.centerXAnchor.constraint(equalTo: empty.centerXAnchor),
-            emptyText.topAnchor.constraint(equalTo: emptyGlyph.bottomAnchor, constant: 8),
-        ])
-
-        queueBox = NSView()
-        queueBox.translatesAutoresizingMaskIntoConstraints = false
-        flex = NSView()
-        flex.translatesAutoresizingMaskIntoConstraints = false
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        empty.translatesAutoresizingMaskIntoConstraints = false
-        queueBox.addSubview(scroll); queueBox.addSubview(empty)
-        NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: queueBox.topAnchor),
-            scroll.leadingAnchor.constraint(equalTo: queueBox.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: queueBox.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: queueBox.bottomAnchor),
-            empty.centerXAnchor.constraint(equalTo: queueBox.centerXAnchor),
-            empty.centerYAnchor.constraint(equalTo: queueBox.centerYAnchor),
-            empty.widthAnchor.constraint(equalToConstant: 300),
-            empty.heightAnchor.constraint(equalToConstant: 150),
-        ])
-        queueMinH = queueBox.heightAnchor.constraint(greaterThanOrEqualToConstant: 150)
-        queueMinH.isActive = true
-        queueBox.setContentHuggingPriority(.defaultHigh, for: .vertical)
-        flex.setContentHuggingPriority(.defaultLow, for: .vertical)
-        syncQueue()
-
-        // 输出方式：分别保存 / 合并（完全）/ 合并（间隔·双面）
-        let optRow = NSStackView()
-        optRow.orientation = .horizontal
-        optRow.spacing = 8
-        let optLabel = NSTextField(labelWithString: "输出方式")
-        optLabel.font = .systemFont(ofSize: 12)
-        optLabel.textColor = .secondaryLabelColor
-        mergePopup.controlSize = .small
-        mergePopup.font = .systemFont(ofSize: 12)
-        mergePopup.addItems(withTitles: ["分别保存", "合并（完全）", "合并（间隔·双面）"])
-        mergePopup.toolTip = "合并按队列顺序；间隔模式会在每份文档后补空白页，双面打印时不同试卷不会落在同一张纸上。"
-        mergePopup.target = self
-        mergePopup.action = #selector(mergeModeChanged)
-        let savedMode = UserDefaults.standard.integer(forKey: "scanpdf.mergeMode")
-        mergePopup.selectItem(at: min(max(savedMode, 0), 2))
-        let optSpacer = NSView()
-        optSpacer.translatesAutoresizingMaskIntoConstraints = false
-        optSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        optRow.addArrangedSubview(optLabel)
-        optRow.addArrangedSubview(mergePopup)
-        optRow.addArrangedSubview(optSpacer)
-
-        let foot = NSStackView()
-        foot.orientation = .horizontal
-        foot.spacing = 10
-        status.font = .systemFont(ofSize: 12)
-        status.textColor = .secondaryLabelColor
-        status.lineBreakMode = .byTruncatingTail
-        status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        openBtn.title = "输出文件夹"
-        openBtn.bezelStyle = .rounded
-        openBtn.target = self
-        openBtn.action = #selector(reveal)
-        start.title = mergeMode == .separate ? "开始处理" : "开始并合并"
-        start.bezelStyle = .rounded
-        start.keyEquivalent = "\r"
-        start.target = self
-        start.action = #selector(begin)
-        start.isEnabled = false
-        foot.addArrangedSubview(status)
-        let spacer = NSView()
-        spacer.translatesAutoresizingMaskIntoConstraints = false
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        foot.addArrangedSubview(spacer)
-        foot.addArrangedSubview(openBtn)
-        foot.addArrangedSubview(start)
-
-        root.addArrangedSubview(head)
-        root.addArrangedSubview(drop)
-        root.addArrangedSubview(queueBox)
-        root.addArrangedSubview(flex)
-        root.addArrangedSubview(optRow)
-        root.addArrangedSubview(foot)
-
+        let root = ColorView(color: T.canvas)
         window.contentView = root
-        NSLayoutConstraint.activate([
-            root.topAnchor.constraint(equalTo: window.contentView!.topAnchor),
-            root.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor),
-            root.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor),
-            root.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor),
-        ])
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
 
-        // 自动化：SCANPDF_MERGE=full|duplex 可直接指定合并模式。
+        // 侧边栏
+        let sidebar = ColorView(color: T.sidebar)
+        sidebar.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(sidebar)
+
+        let divider = ColorView(color: T.line)
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(divider)
+
+        // 内容区
+        let content = ColorView(color: T.canvas)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(content)
+
+        NSLayoutConstraint.activate([
+            sidebar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            sidebar.topAnchor.constraint(equalTo: root.topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            sidebar.widthAnchor.constraint(equalToConstant: T.sidebarW),
+            divider.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            divider.topAnchor.constraint(equalTo: root.topAnchor),
+            divider.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            divider.widthAnchor.constraint(equalToConstant: 1),
+            content.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
+            content.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            content.topAnchor.constraint(equalTo: root.topAnchor),
+            content.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+        ])
+
+        if ProcessInfo.processInfo.environment["SCANPDF_APPEARANCE"] == "light" {
+            NSApp.appearance = NSAppearance(named: .aqua)
+        }
+
+        buildSidebar(sidebar)
+        buildPages(content)
+        showPage(0)
+        if let p = ProcessInfo.processInfo.environment["SCANPDF_PAGE"] {
+            showPage(p == "settings" ? 1 : (p == "help" ? 2 : 0))
+        }
+
+        // 恢复合并方式
+        let saved = UserDefaults.standard.integer(forKey: "scanpdf.mergeMode")
+        applyMergeMode(saved, persist: false)
         if let m = ProcessInfo.processInfo.environment["SCANPDF_MERGE"] {
             applyMergeMode(m == "full" ? 1 : (m == "duplex" ? 2 : 0), persist: false)
         }
+        refreshOutputPath()
+        refreshDisk()
+        setStatus("就绪")
 
-        // 命令行入口：拖 PDF 路径进来即可排队，SCANPDF_AUTORUN=1 立即处理。
-        // 同一段代码也是按钮走的路径，顺带当自动化测试用。
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+
+        // 自动化：命令行传入 PDF 路径即可排队
         let args = CommandLine.arguments.dropFirst().map { URL(fileURLWithPath: $0) }
         let pdfs = args.filter { $0.pathExtension.lowercased() == "pdf" &&
                                  FileManager.default.fileExists(atPath: $0.path) }
@@ -743,6 +961,507 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
             }
         }
     }
+
+    // MARK: 侧边栏
+
+    func buildSidebar(_ sidebar: NSView) {
+        // 顶部品牌
+        let icon = NSImageView()
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        if let u = Bundle.main.url(forResource: "Icon", withExtension: "icns"),
+           let art = NSImage(contentsOf: u) { icon.image = art }
+        else { icon.image = NSImage(systemSymbolName: "doc.text.magnifyingglass", accessibilityDescription: nil) }
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.wantsLayer = true
+        icon.layer?.cornerRadius = 12
+        icon.layer?.cornerCurve = .continuous
+        icon.layer?.masksToBounds = true
+
+        let name = label("试卷清晰化", 16, .bold, T.ink)
+        let by = label("by ClearPaper", 11.5, .medium, T.mute)
+        let titles = vstack([name, by], spacing: 1)
+        let head = hstack([icon, titles], spacing: 11, alignment: .centerY)
+        head.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.addSubview(head)
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: 46),
+            icon.heightAnchor.constraint(equalToConstant: 46),
+            head.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 16),
+            head.trailingAnchor.constraint(lessThanOrEqualTo: sidebar.trailingAnchor, constant: -16),
+            head.topAnchor.constraint(equalTo: sidebar.topAnchor, constant: 52),
+        ])
+
+        // 导航
+        let nav = NSStackView()
+        nav.orientation = .vertical
+        nav.alignment = .leading
+        nav.spacing = 4
+        nav.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.addSubview(nav)
+
+        let items: [(String, String)] = [
+            ("wand.and.stars", "处理"),
+            ("gearshape", "设置"),
+            ("questionmark.circle", "帮助"),
+        ]
+        for (i, item) in items.enumerated() {
+            let row = NavRow(symbol: item.0, title: item.1)
+            row.translatesAutoresizingMaskIntoConstraints = false
+            row.onTap = { [weak self] in self?.showPage(i) }
+            nav.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: nav.widthAnchor).isActive = true
+            navRows.append(row)
+            if i == 0 { processingRow = row }
+        }
+        NSLayoutConstraint.activate([
+            nav.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 10),
+            nav.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -10),
+            nav.topAnchor.constraint(equalTo: head.bottomAnchor, constant: 22),
+        ])
+
+        // 底部：状态 + 磁盘
+        sidebarPill.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.addSubview(sidebarPill)
+
+        diskName.font = .systemFont(ofSize: 11, weight: .medium)
+        diskName.textColor = T.sub
+        diskName.lineBreakMode = .byTruncatingTail
+        diskFree.font = .systemFont(ofSize: 11, weight: .semibold)
+        diskFree.textColor = T.ink2
+        diskFree.alignment = .right
+        let diskRow = hstack([diskName, spinnerSpacer(), diskFree], spacing: 6)
+        diskRow.translatesAutoresizingMaskIntoConstraints = false
+        diskBar.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.addSubview(diskRow); sidebar.addSubview(diskBar)
+
+        NSLayoutConstraint.activate([
+            sidebarPill.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 14),
+            sidebarPill.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -14),
+
+            diskRow.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 16),
+            diskRow.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -16),
+            diskRow.bottomAnchor.constraint(equalTo: diskBar.topAnchor, constant: -8),
+
+            diskBar.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor, constant: 16),
+            diskBar.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -16),
+            diskBar.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor, constant: -16),
+            diskBar.heightAnchor.constraint(equalToConstant: 4),
+
+            sidebarPill.bottomAnchor.constraint(equalTo: diskRow.topAnchor, constant: -14),
+        ])
+    }
+
+    func spinnerSpacer() -> NSView { spacer() }
+
+    // MARK: 页面
+
+    func buildPages(_ host: NSView) {
+        let process = PageScroll()
+        let settings = PageScroll()
+        let help = PageScroll()
+        pages = [process, settings, help]
+        for p in pages {
+            p.translatesAutoresizingMaskIntoConstraints = false
+            host.addSubview(p)
+            NSLayoutConstraint.activate([
+                p.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+                p.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+                p.topAnchor.constraint(equalTo: host.topAnchor),
+                p.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+            ])
+        }
+
+        buildProcessPage(process)
+        buildSettingsPage(settings)
+        buildHelpPage(help)
+    }
+
+    func pageHeader(_ title: String, _ subtitle: String, badge: String? = nil) -> NSView {
+        let t = label(title, 28, .bold, T.ink)
+        let s = label(subtitle, 13, .regular, T.sub)
+        var rowViews: [NSView] = [t]
+        if let badge = badge {
+            rowViews.append(spacer())
+            rowViews.append(chip(badge, fg: T.amber, bg: T.amberSoft))
+        }
+        let row = hstack(rowViews, spacing: 10)
+        let stack = vstack([row, s], spacing: 6)
+        row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        s.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        return stack
+    }
+
+    func buildProcessPage(_ page: PageScroll) {
+        page.addFull(pageHeader("试卷清晰化",
+                                "扫描 / 拍照的试卷 → 可直接打印的 A4 清晰版 · 全离线",
+                                badge: "全离线"))
+
+        // 拖拽区
+        drop = DropCard()
+        drop.onDrop = { [weak self] in self?.enqueue($0) }
+        drop.onPick = { [weak self] in self?.pick() }
+        page.addFull(drop)
+
+        // 队列
+        let queueTitle = label("待处理", 13.5, .semibold, T.ink)
+        countLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        countLabel.textColor = T.mute
+        let clear = NSButton(title: "清空", target: self, action: #selector(clearQueue))
+        clear.isBordered = false
+        clear.font = .systemFont(ofSize: 11.5, weight: .medium)
+        clear.contentTintColor = T.sub
+        let queueHead = hstack([queueTitle, countLabel, spacer(), clear], spacing: 8)
+
+        table.style = .plain
+        table.rowHeight = 66
+        table.headerView = nil
+        table.backgroundColor = .clear
+        table.selectionHighlightStyle = .none
+        table.intercellSpacing = .zero
+        table.registerForDraggedTypes([.string])
+        table.draggingDestinationFeedbackStyle = .gap
+        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        table.dataSource = self
+        table.delegate = self
+        table.target = self
+        table.doubleAction = #selector(openResult)
+        let col = NSTableColumn(identifier: .init("row"))
+        col.resizingMask = .autoresizingMask
+        table.addTableColumn(col)
+        table.autoresizingMask = [.width]
+        table.frame = NSRect(x: 0, y: 0, width: 640, height: 224)
+
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        scroll.autohidesScrollers = true
+        scroll.documentView = table
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+
+        let queueHost = NSView()
+        queueHost.translatesAutoresizingMaskIntoConstraints = false
+        queueHost.heightAnchor.constraint(equalToConstant: 224).isActive = true
+        queueHost.addSubview(scroll)
+        NSLayoutConstraint.activate([
+            scroll.leadingAnchor.constraint(equalTo: queueHost.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: queueHost.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: queueHost.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: queueHost.bottomAnchor),
+        ])
+
+        let emptyIcon = NSImageView()
+        emptyIcon.image = NSImage(systemSymbolName: "tray", accessibilityDescription: nil)
+        emptyIcon.symbolConfiguration = .init(pointSize: 24, weight: .regular)
+        emptyIcon.contentTintColor = T.mute
+        let emptyTitle = label("还没有文件", 12.5, .medium, T.sub)
+        let emptyHint = label("拖入 PDF，或点「选择文件…」", 11.5, .regular, T.mute)
+        let emptyStack = vstack([emptyIcon, emptyTitle, emptyHint], spacing: 6, alignment: .centerX)
+        empty.translatesAutoresizingMaskIntoConstraints = false
+        empty.addSubview(emptyStack)
+        emptyStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            emptyStack.centerXAnchor.constraint(equalTo: empty.centerXAnchor),
+            emptyStack.centerYAnchor.constraint(equalTo: empty.centerYAnchor),
+        ])
+        queueHost.addSubview(empty)
+        NSLayoutConstraint.activate([
+            empty.leadingAnchor.constraint(equalTo: queueHost.leadingAnchor),
+            empty.trailingAnchor.constraint(equalTo: queueHost.trailingAnchor),
+            empty.topAnchor.constraint(equalTo: queueHost.topAnchor),
+            empty.bottomAnchor.constraint(equalTo: queueHost.bottomAnchor),
+        ])
+
+        let queueStack = vstack([queueHead, queueHost], spacing: 10)
+        queueHead.widthAnchor.constraint(equalTo: queueStack.widthAnchor).isActive = true
+        queueHost.widthAnchor.constraint(equalTo: queueStack.widthAnchor).isActive = true
+        let queueCard = Card(queueStack)
+        page.addFull(queueCard)
+
+        // 输出方式 + 开始
+        let outLabel = label("输出方式", 13, .medium, T.ink2)
+        configureMergePopup(mergePopup)
+        mergePopup.target = self
+        mergePopup.action = #selector(mergeModeChanged)
+        mergePopup.controlSize = .small
+        mergePopup.font = .systemFont(ofSize: 12)
+
+        start.titleText = "开始处理"
+        start.target = self
+        start.action = #selector(begin)
+        start.isEnabled = false
+        start.widthAnchor.constraint(greaterThanOrEqualToConstant: 128).isActive = true
+        start.heightAnchor.constraint(equalToConstant: 36).isActive = true
+
+        let actionTop = hstack([outLabel, mergePopup, spacer(), start], spacing: 10)
+        status.font = .systemFont(ofSize: 11.5)
+        status.textColor = T.sub
+        status.lineBreakMode = .byTruncatingTail
+        status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let actionStack = vstack([actionTop, status], spacing: 8)
+        actionTop.widthAnchor.constraint(equalTo: actionStack.widthAnchor).isActive = true
+        status.widthAnchor.constraint(equalTo: actionStack.widthAnchor).isActive = true
+        let actionCard = Card(actionStack, padding: NSEdgeInsets(top: 14, left: 18, bottom: 14, right: 18))
+        page.addFull(actionCard)
+
+        syncQueue()
+    }
+
+    func buildSettingsPage(_ page: PageScroll) {
+        page.addFull(pageHeader("设置", "输出位置、默认方式与数据边界"))
+
+        // 输出设置
+        let pathRow = settingRow(icon: "folder",
+                                 title: "输出文件夹",
+                                 subtitle: outputPathLabel,
+                                 accessory: smallButton("选择…", #selector(chooseOutput)))
+        let openRow = settingRow(icon: "arrow.up.forward.app",
+                                 title: "打开输出文件夹",
+                                 subtitle: label("在访达中查看处理结果", 11.5, .regular, T.sub),
+                                 accessory: smallButton("打开", #selector(reveal)))
+        configureMergePopup(settingsMergePopup)
+        settingsMergePopup.target = self
+        settingsMergePopup.action = #selector(settingsMergeChanged)
+        settingsMergePopup.controlSize = .small
+        settingsMergePopup.font = .systemFont(ofSize: 12)
+        let mergeRow = settingRow(icon: "doc.on.doc",
+                                  title: "默认输出方式",
+                                  subtitle: label("合并按队列顺序 · 间隔模式双面不跨卷", 11.5, .regular, T.sub),
+                                  accessory: settingsMergePopup)
+        let list = vstack([pathRow, separator(), openRow, separator(), mergeRow], spacing: 0)
+        for v in list.arrangedSubviews {
+            v.widthAnchor.constraint(equalTo: list.widthAnchor).isActive = true
+        }
+        page.addFull(Card(list, padding: NSEdgeInsets(top: 4, left: 16, bottom: 4, right: 16)))
+
+        // 数据边界
+        page.addFull(sectionHeader("数据边界", hint: "无论处理什么文件都一样"))
+        let c1 = infoCard(icon: "wifi.slash", title: "全离线",
+                          body: "只在你自己的电脑上处理，不上传任何文件，也不需要联网。",
+                          tint: T.amber, soft: T.amberSoft)
+        let c2 = infoCard(icon: "lock.shield", title: "不改原件",
+                          body: "只读取你拖入的 PDF，原文件不会被修改或移动。",
+                          tint: T.blue, soft: T.blueSoft)
+        let c3 = infoCard(icon: "checkmark.seal", title: "质量闸门",
+                          body: "输出前检查笔画保留、A4 尺寸与页数，不达标会提示。",
+                          tint: T.green, soft: T.greenSoft)
+        let cards = hstack([c1, c2, c3], spacing: 12, alignment: .top)
+        cards.distribution = .fillEqually
+        page.addFull(cards)
+
+        // 关于
+        page.addFull(sectionHeader("关于"))
+        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let aboutRow = settingRow(icon: "info.circle",
+                                  title: "试卷清晰化 \(ver)",
+                                  subtitle: label("github.com/jpruby0127/ClearPaper", 11.5, .regular, T.sub),
+                                  accessory: smallButton("打开", #selector(openRepo)))
+        page.addFull(Card(aboutRow, padding: NSEdgeInsets(top: 4, left: 16, bottom: 4, right: 16)))
+    }
+
+    func buildHelpPage(_ page: PageScroll) {
+        page.addFull(pageHeader("帮助", "三步把试卷变成可打印的清晰版"))
+
+        let steps = vstack([
+            helpStep(1, "拖入 PDF", "把一份或多份试卷拖进「处理」页，或点「选择文件…」。加入顺序就是合并顺序，列表可拖动调整。"),
+            helpStep(2, "选输出方式", "分别保存：每份各存一个清晰版；合并（完全）：首尾相接；合并（间隔·双面）：每份后补空白页，双面打印不跨卷。"),
+            helpStep(3, "开始处理", "点「开始处理 / 开始并合并」。全部在本机完成，完成后可在输出文件夹查看。"),
+        ], spacing: 14)
+        for v in steps.arrangedSubviews {
+            v.widthAnchor.constraint(equalTo: steps.widthAnchor).isActive = true
+        }
+        page.addFull(Card(steps))
+
+        page.addFull(paragraphCard("打印小贴士",
+            "打印时选 A4、缩放「实际大小 / 100%」，不要选「适合页面」。横向页面会自动输出横向 A4。"))
+        page.addFull(paragraphCard("合并方式",
+            "完全合并：按队列顺序首尾相接。\n间隔合并：每份非末尾文档为奇数页时补一张空白页，保证下一份从新纸正面开始。"))
+        let offline = label("全离线 · 不上传任何文件 · 数据只在本机", 11.5, .regular, T.mute)
+        offline.alignment = .center
+        page.addFull(offline)
+    }
+
+    func paragraphCard(_ title: String, _ body: String) -> Card {
+        let t = label(title, 13.5, .semibold, T.ink)
+        let b = label(body, 12, .regular, T.sub)
+        b.maximumNumberOfLines = 0
+        b.lineBreakMode = .byWordWrapping
+        let s = vstack([t, b], spacing: 6)
+        t.widthAnchor.constraint(equalTo: s.widthAnchor).isActive = true
+        b.widthAnchor.constraint(equalTo: s.widthAnchor).isActive = true
+        return Card(s)
+    }
+
+    func settingRow(icon: String, title: String, subtitle: NSTextField, accessory: NSView) -> NSView {
+        let box = iconBox(icon)
+        let t = label(title, 13.5, .semibold, T.ink)
+        subtitle.font = .systemFont(ofSize: 11.5)
+        subtitle.textColor = T.sub
+        subtitle.lineBreakMode = .byTruncatingMiddle
+        let texts = vstack([t, subtitle], spacing: 2)
+        texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        texts.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let row = hstack([box, texts, spacer(), accessory], spacing: 12)
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.heightAnchor.constraint(equalToConstant: 64).isActive = true
+        return row
+    }
+
+    func sectionHeader(_ title: String, hint: String? = nil) -> NSView {
+        let t = label(title, 13.5, .semibold, T.ink)
+        var views: [NSView] = [t]
+        if let hint = hint {
+            views.append(spacer())
+            views.append(label(hint, 11.5, .regular, T.mute))
+        }
+        return hstack(views, spacing: 8)
+    }
+
+    func infoCard(icon: String, title: String, body: String,
+                  tint: NSColor, soft: NSColor) -> Card {
+        let box = iconBox(icon, size: 30, radius: 8, tint: tint, bg: soft, point: 14)
+        let t = label(title, 13.5, .semibold, T.ink)
+        let b = label(body, 11.5, .regular, T.sub)
+        b.maximumNumberOfLines = 0
+        b.lineBreakMode = .byWordWrapping
+        let stack = vstack([box, t, b], spacing: 8)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        t.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        b.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        let card = Card(stack, padding: NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16))
+        card.heightAnchor.constraint(greaterThanOrEqualToConstant: 122).isActive = true
+        return card
+    }
+
+    func helpStep(_ n: Int, _ title: String, _ body: String) -> NSView {
+        let num = ColorView(color: T.amberSoft)
+        num.translatesAutoresizingMaskIntoConstraints = false
+        num.layer?.cornerRadius = 11
+        num.layer?.cornerCurve = .continuous
+        let nl = label("\(n)", 12, .bold, T.amber)
+        nl.alignment = .center
+        nl.translatesAutoresizingMaskIntoConstraints = false
+        num.addSubview(nl)
+        NSLayoutConstraint.activate([
+            num.widthAnchor.constraint(equalToConstant: 24),
+            num.heightAnchor.constraint(equalToConstant: 24),
+            nl.centerXAnchor.constraint(equalTo: num.centerXAnchor),
+            nl.centerYAnchor.constraint(equalTo: num.centerYAnchor),
+        ])
+        let t = label(title, 13, .semibold, T.ink)
+        let b = label(body, 11.5, .regular, T.sub)
+        b.maximumNumberOfLines = 0
+        b.lineBreakMode = .byWordWrapping
+        let texts = vstack([t, b], spacing: 3)
+        texts.translatesAutoresizingMaskIntoConstraints = false
+        texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        texts.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        b.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        b.widthAnchor.constraint(equalTo: texts.widthAnchor).isActive = true
+        let row = hstack([num, texts], spacing: 12, alignment: .top)
+        return row
+    }
+
+    func separator() -> NSView {
+        let s = ColorView(color: T.line2)
+        s.translatesAutoresizingMaskIntoConstraints = false
+        s.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        return s
+    }
+
+    func smallButton(_ title: String, _ action: Selector) -> NSButton {
+        let b = NSButton(title: title, target: self, action: action)
+        b.bezelStyle = .rounded
+        b.controlSize = .small
+        b.font = .systemFont(ofSize: 11.5, weight: .medium)
+        return b
+    }
+
+    func configureMergePopup(_ p: NSPopUpButton) {
+        p.removeAllItems()
+        p.addItems(withTitles: ["分别保存", "合并（完全）", "合并（间隔·双面）"])
+    }
+
+    // MARK: 页面切换
+
+    func showPage(_ index: Int) {
+        guard index >= 0, index < pages.count else { return }
+        currentPage = index
+        for (i, p) in pages.enumerated() { p.isHidden = (i != index) }
+        for (i, r) in navRows.enumerated() { r.isSelected = (i == index) }
+        let p = pages[index]
+        p.contentView.scroll(to: .zero)
+        p.reflectScrolledClipView(p.contentView)
+    }
+
+    // MARK: 状态
+
+    func setStatus(_ text: String) {
+        status.stringValue = text
+        sidebarPill.text = text
+        if text.contains("失败") || text.contains("未通过") {
+            status.textColor = T.red
+            sidebarPill.tone = .bad
+        } else if text.contains("处理中") || text.contains("正在合并") {
+            status.textColor = T.amber
+            sidebarPill.tone = .busy
+        } else if text.contains("完成") || text.contains("已合并") || text.contains("已加入") || text.contains("就绪") {
+            status.textColor = T.sub
+            sidebarPill.tone = .ok
+        } else {
+            status.textColor = T.sub
+            sidebarPill.tone = .neutral
+        }
+    }
+
+    func refreshOutputPath() {
+        let path = OutputStore.shared.url.path
+        let home = NSHomeDirectory()
+        outputPathLabel.stringValue = path.hasPrefix(home)
+            ? "~" + String(path.dropFirst(home.count))
+            : path
+    }
+
+    func refreshDisk() {
+        let fm = FileManager.default
+        var name = "Macintosh HD"
+        if let v = try? URL(fileURLWithPath: "/").resourceValues(forKeys: [.volumeNameKey]),
+           let n = v.volumeName { name = n }
+        let attrs = try? fm.attributesOfFileSystem(forPath: NSHomeDirectory())
+        let total = (attrs?[.systemSize] as? NSNumber)?.doubleValue ?? 0
+        let free = (attrs?[.systemFreeSize] as? NSNumber)?.doubleValue ?? 0
+        diskName.stringValue = name
+        diskFree.stringValue = String(format: "%.1f GB 可用", free / 1_073_741_824)
+        diskBar.fraction = total > 0 ? CGFloat((total - free) / total) : 0
+    }
+
+    // MARK: 合并方式
+
+    func applyMergeMode(_ index: Int, persist: Bool = true) {
+        let i = min(max(index, 0), 2)
+        mergePopup.selectItem(at: i)
+        settingsMergePopup.selectItem(at: i)
+        if persist { UserDefaults.standard.set(i, forKey: "scanpdf.mergeMode") }
+        start.titleText = mergeMode == .separate ? "开始处理" : "开始并合并"
+    }
+
+    @objc func mergeModeChanged() {
+        applyMergeMode(mergePopup.indexOfSelectedItem)
+        mergeHint()
+    }
+    @objc func settingsMergeChanged() {
+        applyMergeMode(settingsMergePopup.indexOfSelectedItem)
+        mergeHint()
+    }
+    func mergeHint() {
+        guard !busy else { return }
+        switch mergeMode {
+        case .separate: setStatus(jobs.isEmpty ? "就绪" : "已加入 \(jobs.count) 个文件")
+        case .full: setStatus("完全合并：按队列顺序首尾相接")
+        case .duplex: setStatus("间隔合并：每份后补空白页，双面不跨卷")
+        }
+    }
+
+    // MARK: 窗口生命周期
 
     func applicationWillTerminate(_ notification: Notification) {
         OutputStore.shared.stopAccessing()
@@ -760,8 +1479,6 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
 
     // MARK: 队列
 
-    /// 沙盒下，拖入 / 打开的 PDF 在处理时可能已失去访问权。入队时立刻把源文件
-    /// 拷进 App 自己的 Inbox（沙盒内始终可写），之后只处理这份副本，绝不丢文件。
     func secureCopy(_ src: URL) -> URL {
         let fm = FileManager.default
         let scoped = src.startAccessingSecurityScopedResource()
@@ -787,16 +1504,22 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         table.reloadData()
         syncQueue()
         start.isEnabled = !busy && !jobs.isEmpty
-        status.stringValue = jobs.isEmpty ? "就绪" : "已加入 \(jobs.count) 个文件"
+        setStatus(jobs.isEmpty ? "就绪" : "已加入 \(jobs.count) 个文件")
     }
 
     func syncQueue() {
         empty.isHidden = !jobs.isEmpty
-        queueMinH.constant = jobs.isEmpty ? 150 : 220
-        queueBox.setContentHuggingPriority(jobs.isEmpty ? .defaultHigh : .defaultLow,
-                                            for: .vertical)
-        flex.setContentHuggingPriority(jobs.isEmpty ? .defaultLow : .defaultHigh,
-                                       for: .vertical)
+        countLabel.stringValue = jobs.isEmpty ? "" : "\(jobs.count)"
+        processingRow?.badgeText = jobs.isEmpty ? "" : "\(jobs.count)"
+    }
+
+    @objc func clearQueue() {
+        guard !busy else { return }
+        jobs.removeAll()
+        table.reloadData()
+        syncQueue()
+        start.isEnabled = false
+        setStatus("就绪")
     }
 
     @objc func pick() {
@@ -809,27 +1532,9 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         if panel.runModal() == .OK { enqueue(panel.urls) }
     }
 
-    @objc func chooseOutput() { OutputStore.shared.choose() }
-
-    func applyMergeMode(_ index: Int, persist: Bool = true) {
-        mergePopup.selectItem(at: min(max(index, 0), 2))
-        if persist {
-            UserDefaults.standard.set(mergePopup.indexOfSelectedItem, forKey: "scanpdf.mergeMode")
-        }
-        start.title = mergeMode == .separate ? "开始处理" : "开始并合并"
-    }
-
-    @objc func mergeModeChanged() {
-        applyMergeMode(mergePopup.indexOfSelectedItem)
-        guard !busy else { return }
-        switch mergeMode {
-        case .separate:
-            status.stringValue = jobs.isEmpty ? "就绪" : "已加入 \(jobs.count) 个文件"
-        case .full:
-            status.stringValue = "完全合并：按队列顺序首尾相接成一个 PDF"
-        case .duplex:
-            status.stringValue = "间隔合并：每份后补空白页，双面打印不跨卷"
-        }
+    @objc func chooseOutput() {
+        OutputStore.shared.choose()
+        refreshOutputPath()
     }
 
     @objc func reveal() {
@@ -838,6 +1543,12 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         }
         NSWorkspace.shared.open(url)
+    }
+
+    @objc func openRepo() {
+        if let u = URL(string: "https://github.com/jpruby0127/ClearPaper") {
+            NSWorkspace.shared.open(u)
+        }
     }
 
     @objc func openResult() {
@@ -849,8 +1560,8 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
 
     @objc func begin() {
         guard !busy, !jobs.isEmpty else { return }
-        let pending = jobs.filter { $0.state == "排队中" || $0.state == "失败" }
-        guard !pending.isEmpty else { return }
+        let pending = jobs.filter { ["排队中", "失败", "未通过"].contains($0.state) }
+        guard !pending.isEmpty else { setStatus("没有待处理的文件"); return }
         run(pending)
     }
 
@@ -858,7 +1569,6 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
 
     func numberOfRows(in t: NSTableView) -> Int { jobs.count }
 
-    // 拖动行调整顺序（合并严格按这个顺序）
     func tableView(_ t: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
         let item = NSPasteboardItem()
         item.setString(String(row), forType: .string)
@@ -884,7 +1594,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         to = min(max(to, 0), jobs.count)
         jobs.insert(job, at: to)
         t.reloadData()
-        status.stringValue = "已调整顺序 · 合并将按新顺序"
+        setStatus("已调整顺序 · 合并将按新顺序")
         return true
     }
 
@@ -897,11 +1607,19 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         cell.meta.stringValue = j.detail.isEmpty ? "等待处理" : j.detail
         cell.pill.text = j.state
         switch j.state {
-        case "完成": cell.pill.tone = .systemGreen; cell.bar.isHidden = true
-        case "失败", "未通过": cell.pill.tone = .systemRed; cell.bar.isHidden = true
-        case "处理中": cell.pill.tone = .controlAccentColor; cell.bar.isHidden = false
-                     cell.bar.startAnimation(nil)
-        default: cell.pill.tone = .secondaryLabelColor; cell.bar.isHidden = true
+        case "完成":
+            cell.pill.tone = T.green
+            cell.bar.isHidden = true
+        case "失败", "未通过":
+            cell.pill.tone = T.red
+            cell.bar.isHidden = true
+        case "处理中":
+            cell.pill.tone = T.amber
+            cell.bar.isHidden = false
+            cell.bar.startAnimation(nil)
+        default:
+            cell.pill.tone = T.mute
+            cell.bar.isHidden = true
         }
         return cell
     }
@@ -923,7 +1641,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         table.reloadData()
         busy = true
         start.isEnabled = false
-        status.stringValue = "处理中… 全部在本机完成，不上传任何文件"
+        setStatus("处理中… 全部在本机完成，不上传任何文件")
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
@@ -958,6 +1676,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
                     self.table.reloadData()
                 }
             }
+
             let failures = results.filter { !$0.0.passed || $0.0.pages == 0 }.count
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
@@ -969,23 +1688,24 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
                     guard let self else { return }
                     self.busy = false
                     self.start.isEnabled = self.jobs.contains {
-                        $0.state == "排队中" || $0.state == "失败" || $0.state == "未通过"
+                        ["排队中", "失败", "未通过"].contains($0.state)
                     }
-                    self.status.stringValue = message
+                    self.setStatus(message)
+                    self.syncQueue()
+                    self.refreshDisk()
                     if let u = revealURL {
                         NSWorkspace.shared.activateFileViewerSelecting([u])
-                    } else if !autoQuit {
+                    } else if failures == 0 && !autoQuit {
                         self.reveal()
                     }
                     if autoQuit { NSApp.terminate(nil) }
                 }
 
-                // 合并按“队列顺序”取所有已完成的结果，跨批次也保持一致。
                 let ordered = self.jobs.compactMap { $0.output }
                     .filter { FileManager.default.fileExists(atPath: $0.path) }
 
                 if mode != .separate, ordered.count >= 2 {
-                    self.status.stringValue = "正在合并 \(ordered.count) 份…"
+                    self.setStatus("正在合并 \(ordered.count) 份…")
                     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                         guard let self else { return }
                         let df = DateFormatter()
@@ -1001,7 +1721,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
                             } else {
                                 self.busy = false
                                 self.start.isEnabled = true
-                                self.status.stringValue = "合并失败"
+                                self.setStatus("合并失败")
                                 presentError("合并 PDF 失败，请检查文件是否有效。")
                                 if autoQuit { NSApp.terminate(nil) }
                             }
@@ -1011,7 +1731,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
                     finish("仅 1 份，已单独保存（未合并）", nil)
                 } else {
                     finish(failures == 0
-                        ? "完成 · 结果在 文稿/试卷清晰版"
+                        ? "完成 · 结果在输出文件夹"
                         : "有 \(failures) 项未通过质量闸门", nil)
                 }
             }

@@ -36,6 +36,11 @@
 
 ## 📸 效果
 
+<p align="center">
+  <img src="docs/screenshots/mac-ui.png" width="760" alt="macOS 界面">
+  <br><sub>macOS 1.3：侧边栏 + 卡片式布局，处理 / 设置 / 帮助</sub>
+</p>
+
 同一页试卷，左边是参考用的 Python 引擎、右边是编译进 App 的 Swift 端上引擎——**两者输出一致**，说明手机/电脑里跑的就是同一套算法：
 
 <p align="center">
@@ -58,7 +63,7 @@ iPhone 上的处理结果卡片（全离线，导入 PDF → 本机处理 → �
 
 ### macOS · 拖进应用程序即可用
 
-1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ScanClean-macOS-1.2.1.dmg`**；
+1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ScanClean-macOS-1.3.0.dmg`**；
 2. 打开 DMG，把「试卷清晰化」拖进「应用程序」；
 3. 首次打开若被拦截：右键 App → 「打开」→「打开」。
 
@@ -165,7 +170,7 @@ pip install pymupdf numpy pillow scipy
 
 | 版本 | 平台 | 产物 | 说明 |
 |---|---|---|---|
-| v1.2.1 | macOS | `ScanClean-macOS-1.2.1.dmg` | 简洁安装盘；多份合并 + 横向 A4 修复 |
+| v1.3.0 | macOS | `ScanClean-macOS-1.3.0.dmg` | 全新侧边栏 UI；多份合并 + 横向 A4 修复 |
 | v1.2.1 | iOS | `ScanClean-iOS-1.2.1-unsigned.ipa` | 原生 App，全离线，需自签安装 |
 | v1.0.1 | Windows | `ScanClean-Windows-portable.zip` | 免安装便携包，内置 Python 与依赖，拖拽即用 |
 
