@@ -1,9 +1,9 @@
 #!/bin/bash
 # 在 macOS / Linux 上组装「Windows 免安装便携包」：
-#   dist/ScanClean-Windows-portable.zip
+#   dist/ClearPaper-Windows-portable.zip
 #
 # 原理：Windows 嵌入式 CPython + PyPI 上的 win_amd64 轮子（pymupdf/numpy/Pillow/scipy），
-# 全部解包进 portable 目录，配一个拖拽用的 ScanClean.bat。无需在 Windows 上编译。
+# 全部解包进 portable 目录，配一个拖拽用的 ClearPaper.bat。无需在 Windows 上编译。
 #
 # 用法：./windows/build_portable.sh
 set -eu
@@ -16,7 +16,7 @@ DIST="$ROOT/dist"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-PKG="$WORK/ScanClean"
+PKG="$WORK/ClearPaper"
 mkdir -p "$PKG/python" "$PKG/app" "$DIST"
 
 echo "==> 1/4 下载 Windows 嵌入式 Python $PYVER"
@@ -50,14 +50,14 @@ cp "$ROOT/python/scanpdf/engine.py"      "$PKG/app/engine.py"
 cp "$ROOT/python/scanpdf/clean_scan.py"  "$PKG/app/clean_scan.py"
 cp "$ROOT/python/scanpdf/verify.py"      "$PKG/app/verify.py"
 cp "$HERE/scanpdf.py"                    "$PKG/app/scanpdf.py"
-cp "$HERE/ScanClean.bat"                 "$PKG/ScanClean.bat"
+cp "$HERE/ClearPaper.bat"                "$PKG/ClearPaper.bat"
 cp "$HERE/README-Windows.txt"            "$PKG/README-Windows.txt"
 echo "    app: $(ls "$PKG/app" | tr '\n' ' ')"
 
 echo "==> 4/4 打包 zip"
-OUT="$DIST/ScanClean-Windows-portable.zip"
+OUT="$DIST/ClearPaper-Windows-portable.zip"
 rm -f "$OUT"
-( cd "$WORK" && zip -qrX "$OUT" ScanClean )
+( cd "$WORK" && zip -qrX "$OUT" ClearPaper )
 echo "    $OUT ($(du -h "$OUT" | cut -f1))"
 echo
-echo "完成。Windows 上解压后，把 PDF 拖到 ScanClean.bat 上即可。"
+echo "完成。Windows 上解压后，把 PDF 拖到 ClearPaper.bat 上即可。"

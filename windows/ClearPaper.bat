@@ -7,11 +7,11 @@ set "ROOT=%~dp0"
 
 if "%~1"=="" (
   echo.
-  echo   ClearPaper / ScanClean  -  exam paper clarifier
+  echo   ClearPaper  -  exam paper clarifier  by jpruby
   echo.
   echo   Drag one or more PDF files onto this .bat file.
   echo   Or run from a terminal:
-  echo       ScanClean.bat your-paper.pdf
+  echo       ClearPaper.bat your-paper.pdf
   echo.
   pause
   exit /b 1

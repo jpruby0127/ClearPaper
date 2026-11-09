@@ -8,13 +8,14 @@
 
 <p align="center">
   <b>Turn blurry, dark, scan-framed exam-PDFs into print-ready, crisp A4 — in one step.</b><br>
-  Native macOS + iOS apps. <b>100% on-device, zero dependencies, no network, no server.</b>
+  Native macOS / iOS apps plus a Windows portable build. <b>100% on-device, zero dependencies, no network, no server.</b>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20iOS-000000" alt="platform">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20iOS%20%7C%20Windows-000000" alt="platform">
   <img src="https://img.shields.io/badge/language-Swift%20%2F%20Python-orange" alt="language">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license">
+  <img src="https://img.shields.io/badge/author-jpruby-black" alt="author">
   <img src="https://img.shields.io/badge/engine-100%25%20on--device-green" alt="on-device">
 </p>
 
@@ -63,8 +64,8 @@ Result card on iPhone (fully on-device: import PDF → process → print / share
 
 ### macOS · drag into Applications
 
-1. Download **`ClearPaper-macOS-1.4.0.dmg`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
-2. Open the DMG and drag "试卷清晰化" into Applications;
+1. Download **`ClearPaper-macOS-1.4.1.dmg`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
+2. Open the DMG and drag **ClearPaper** into Applications;
 3. If blocked on first launch: right-click the app → Open → Open.
 
 The app bundles its own engine — **no Python, venv, or config needed** on the friend's Mac. Drop a PDF onto the window (or the Dock icon, multiple at once). Output defaults to `Documents/试卷清晰版`; change it via **File › 选择输出文件夹…**.
@@ -76,15 +77,15 @@ The app bundles its own engine — **no Python, venv, or config needed** on the 
 1. Download **`ClearPaper-iOS-1.4.0-unsigned.ipa`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
 2. On your computer install [Sideloadly](https://sideloadly.io/) (or AltStore), connect the iPhone, pick this IPA, sign with your Apple ID;
 3. On the phone: Settings → General → VPN & Device Management → trust the developer;
-4. In WeChat, open a paper → "Open in another app" → choose 试卷清晰化; or tap "导入试卷 PDF" in the app.
+4. In WeChat, open a paper → "Open in another app" → choose **ClearPaper**; or tap "导入试卷 PDF" in the app.
 
 > Free personal signatures last **7 days**; re-sign once when expired. Files stay on the device.
 
 ### Windows · portable, no install
 
-1. Download **`ScanClean-Windows-portable.zip`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
-2. Extract the whole `ScanClean` folder (not just a single file);
-3. Drag PDFs onto `ScanClean.bat` (several at once); results land next to each source as `<name>-清晰版.pdf`.
+1. Download **`ClearPaper-Windows-portable.zip`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
+2. Extract the whole `ClearPaper` folder (not just a single file);
+3. Drag PDFs onto `ClearPaper.bat` (several at once); results land next to each source as `<name>-清晰版.pdf`.
 
 Python and all dependencies are bundled — **no registry, no network, delete the folder to uninstall**. If SmartScreen blocks the first run, click "More info → Run anyway". Windows 10/11 64-bit.
 
@@ -123,7 +124,7 @@ cd ClearPaper
 
 ```bash
 cd macos
-./build_app.sh                 # non-sandbox + hardened runtime → ~/Applications/试卷清晰化.app
+./build_app.sh                 # non-sandbox + hardened runtime → ~/Applications/ClearPaper.app
 # SANDBOX=1 ./build_app.sh     # App Store sandbox build
 # SIGN_ID="Your Cert" ./build_app.sh
 ```
@@ -160,7 +161,8 @@ pip install -r requirements.txt
 - [ ] Custom output paper (B5 / Letter) and DPI
 - [ ] Desktop folder-watch daemon
 - [ ] Optional OCR text layer (keeps original image)
-- [ ] Windows / Linux CLI builds
+- [x] Windows portable build (v1.1.0)
+- [ ] Linux CLI build
 
 Issues and PRs welcome — let's make this a real open-source gem together.
 
@@ -168,9 +170,9 @@ Issues and PRs welcome — let's make this a real open-source gem together.
 
 | Version | Platform | Artifact | Notes |
 |---|---|---|---|
-| v1.4.0 | macOS | `ClearPaper-macOS-1.4.0.dmg` | New logo + ClearPaper rebrand; sidebar UI |
+| v1.4.1 | macOS | `ClearPaper-macOS-1.4.1.dmg` | New logo + ClearPaper rebrand; sidebar UI |
 | v1.4.0 | iOS | `ClearPaper-iOS-1.4.0-unsigned.ipa` | New logo; native app, fully on-device, self-sign |
-| v1.0.1 | Windows | `ScanClean-Windows-portable.zip` | Portable, bundled Python + deps, drag-and-drop |
+| v1.1.0 | Windows | `ClearPaper-Windows-portable.zip` | ClearPaper rebrand; portable, bundled deps, drag-and-drop |
 
 > Current distribution uses a local **Apple Development** certificate: the Mac DMG opens on the same account; for others, re-sign with a **Developer ID** and notarize via `notarytool` (command ready, no code change). iOS free signatures last 7 days.
 
@@ -180,4 +182,4 @@ Issues and PRs welcome — let's make this a real open-source gem together.
 
 ---
 
-<p align="center">An offline exam-paper clarifier in Swift · your data never leaves the device · open and print</p>
+<p align="center">ClearPaper · by jpruby · an offline exam-paper clarifier in Swift / Python<br>your data never leaves the device · open and print</p>

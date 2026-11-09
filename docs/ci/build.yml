@@ -18,40 +18,40 @@ jobs:
       - name: Build macOS app
         run: |
           cd macos
-          DEST="$PWD/../build/试卷清晰化.app" ./build_app.sh
+          DEST="$PWD/../build/ClearPaper.app" ./build_app.sh
 
       - name: Package macOS DMG
         run: |
           mkdir -p dmg_root/Applications
-          cp -R build/试卷清晰化.app dmg_root/
+          cp -R build/ClearPaper.app dmg_root/
           ln -s /Applications dmg_root/Applications
-          hdiutil create -volname "试卷清晰化" -srcfolder dmg_root -ov -format UDZO build/ScanClean-macOS.dmg
-          ls -la build/ScanClean-macOS.dmg
+          hdiutil create -volname "ClearPaper" -srcfolder dmg_root -ov -format UDZO build/ClearPaper-macOS.dmg
+          ls -la build/ClearPaper-macOS.dmg
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ScanClean-macOS
-          path: build/ScanClean-macOS.dmg
+          name: ClearPaper-macOS
+          path: build/ClearPaper-macOS.dmg
 
       - name: Build iOS unsigned IPA
         run: |
           cd ios
-          ./build_ios.sh ../build/ScanClean-iOS-unsigned.ipa
-          ls -la ../build/ScanClean-iOS-unsigned.ipa
+          ./build_ios.sh ../build/ClearPaper-iOS-unsigned.ipa
+          ls -la ../build/ClearPaper-iOS-unsigned.ipa
 
       - name: Upload iOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ScanClean-iOS
-          path: build/ScanClean-iOS-unsigned.ipa
+          name: ClearPaper-iOS
+          path: build/ClearPaper-iOS-unsigned.ipa
 
       - name: Publish release on tag
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/ScanClean-macOS.dmg
-            build/ScanClean-iOS-unsigned.ipa
+            build/ClearPaper-macOS.dmg
+            build/ClearPaper-iOS-unsigned.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

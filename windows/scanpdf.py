@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""ScanClean for Windows — 把扫描/拍照 PDF 变成打印级清晰 A4。
+"""ClearPaper for Windows — 把扫描/拍照 PDF 变成打印级清晰 A4。
 
 用法：
-    ScanClean.bat 文件.pdf [更多.pdf ...]      或把 PDF 拖到 ScanClean.bat 上
+    ClearPaper.bat 文件.pdf [更多.pdf ...]      或把 PDF 拖到 ClearPaper.bat 上
 
 输出：与原文件同目录的 "<名字>-清晰版.pdf"；若原目录不可写，则落到
       %USERPROFILE%\\Documents\\试卷清晰版\\。
@@ -56,8 +56,8 @@ def main(argv=None):
     _utf8()
     args = [a for a in (argv if argv is not None else sys.argv[1:]) if a]
     if not args or args[0] in ("-h", "--help", "/?"):
-        print("用法：把 PDF 拖到 ScanClean.bat 上，或：")
-        print("      ScanClean.bat 文件.pdf [更多.pdf]")
+        print("用法：把 PDF 拖到 ClearPaper.bat 上，或：")
+        print("      ClearPaper.bat 文件.pdf [更多.pdf]")
         return 0
 
     try:

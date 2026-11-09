@@ -4,10 +4,10 @@ Windows 端是**免安装便携包**：内置嵌入式 CPython 与全部依赖�
 
 ## 用现成的（推荐）
 
-到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ScanClean-Windows-portable.zip`**：
+到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ClearPaper-Windows-portable.zip`**：
 
-1. 解压整个 `ScanClean` 文件夹；
-2. 把 PDF 拖到 `ScanClean.bat` 上（可多个）；
+1. 解压整个 `ClearPaper` 文件夹；
+2. 把 PDF 拖到 `ClearPaper.bat` 上（可多个）；
 3. 结果出现在原文件旁：`<原名>-清晰版.pdf`。
 
 > 首次运行若提示「Windows 已保护你的电脑」：更多信息 → 仍要运行。
@@ -15,8 +15,8 @@ Windows 端是**免安装便携包**：内置嵌入式 CPython 与全部依赖�
 ## 目录结构
 
 ```
-ScanClean/
-├─ ScanClean.bat          拖拽入口（ASCII，避免中文编码问题）
+ClearPaper/
+├─ ClearPaper.bat          拖拽入口（ASCII，避免中文编码问题）
 ├─ README-Windows.txt     使用说明
 ├─ app/
 │  ├─ scanpdf.py          命令行入口 + 质量闸门
@@ -35,7 +35,7 @@ ScanClean/
 
 ```bash
 ./windows/build_portable.sh
-# 产出：dist/ScanClean-Windows-portable.zip
+# 产出：dist/ClearPaper-Windows-portable.zip
 ```
 
 原理：下载 python.org 的 Windows 嵌入式 Python，用
@@ -52,5 +52,5 @@ PyInstaller / Nuitka 都不能跨平台交叉编译，在 macOS 上产不出 Win
 ```bat
 python -m venv venv
 venv\Scripts\pip install pymupdf numpy pillow scipy pyinstaller
-venv\Scripts\pyinstaller --onefile --name ScanClean windows\scanpdf.py --paths python\scanpdf
+venv\Scripts\pyinstaller --onefile --name ClearPaper windows\scanpdf.py --paths python\scanpdf
 ```

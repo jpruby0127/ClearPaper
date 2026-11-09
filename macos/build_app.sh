@@ -61,8 +61,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$NAME</string>
   <key>CFBundleDisplayName</key><string>ClearPaper</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.4.0</string>
-  <key>CFBundleVersion</key><string>8</string>
+  <key>CFBundleShortVersionString</key><string>1.4.1</string>
+  <key>CFBundleVersion</key><string>9</string>
   <key>CFBundleIconFile</key><string>Icon.icns</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
@@ -93,5 +93,5 @@ fi
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -f "$APP" 2>/dev/null || true
 
-echo "已安装：$APP （1.4.0，自包含 Swift 引擎，sandbox=${SANDBOX:-0}）"
+echo "已安装：$APP （1.4.1，自包含 Swift 引擎，sandbox=${SANDBOX:-0}）"
 echo "在 Launchpad 或 访达 › 应用程序 里搜「ClearPaper」即可打开"

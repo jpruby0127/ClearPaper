@@ -1098,7 +1098,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
 
     func buildProcessPage(_ page: PageScroll) {
         page.addFull(pageHeader("ClearPaper",
-                                "试卷清晰化 · 扫描 / 拍照 → 可直接打印的 A4 清晰版 · 全离线",
+                                "扫描 / 拍照的试卷 → 可直接打印的 A4 清晰版 · 全离线",
                                 badge: "全离线"))
 
         // 拖拽区
