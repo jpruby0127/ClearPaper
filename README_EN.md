@@ -16,7 +16,6 @@
   <img src="https://img.shields.io/badge/language-Swift%20%2F%20Python-orange" alt="language">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license">
   <img src="https://img.shields.io/badge/engine-100%25%20on--device-green" alt="on-device">
-  <img src="https://img.shields.io/github/actions/workflow/status/jpruby0127/ClearPaper/build.yml?label=build" alt="build">
 </p>
 
 ---

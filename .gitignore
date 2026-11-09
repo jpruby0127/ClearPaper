@@ -11,6 +11,7 @@ venv/
 # Build artifacts
 *.app/
 build/
+dist/
 DerivedData/
 
 # Local logs / outputs
