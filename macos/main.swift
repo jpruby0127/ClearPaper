@@ -544,13 +544,13 @@ final class DropCard: ColorView {
         pick.controlSize = .small
         pick.font = .systemFont(ofSize: 11.5, weight: .medium)
 
-        let stack = vstack([ic, title, hint, pick], spacing: 7, alignment: .centerX)
+        let stack = vstack([ic, title, hint, pick], spacing: 8, alignment: .centerX)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: 132),
+            heightAnchor.constraint(equalToConstant: 156),
             stack.centerXAnchor.constraint(equalTo: centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 2),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
