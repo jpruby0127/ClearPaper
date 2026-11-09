@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build artifacts
+*.app/
+build/
+DerivedData/
+
+# Local logs / outputs
+扫描件清晰化/
+*.log
