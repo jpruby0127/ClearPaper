@@ -1,0 +1,25 @@
+name: Feature request / 功能建议
+description: 提一个想法或改进建议
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: 你的想法 / Idea
+      description: 想要什么能力？解决什么痛点？
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及方向 / Area
+      options:
+        - 清晰化算法 / Clarity algorithm
+        - macOS App
+        - iOS App
+        - Python 参考引擎
+        - 构建 / CI
+        - 文档 / Docs
+        - 其他 / Other
+    validations:
+      required: false
