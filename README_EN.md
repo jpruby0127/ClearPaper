@@ -63,7 +63,7 @@ Result card on iPhone (fully on-device: import PDF → process → print / share
 
 ### macOS · drag into Applications
 
-1. Download **`ScanClean-macOS-1.3.0.dmg`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
+1. Download **`ScanClean-macOS-1.3.1.dmg`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases);
 2. Open the DMG and drag "试卷清晰化" into Applications;
 3. If blocked on first launch: right-click the app → Open → Open.
 
@@ -168,7 +168,7 @@ Issues and PRs welcome — let's make this a real open-source gem together.
 
 | Version | Platform | Artifact | Notes |
 |---|---|---|---|
-| v1.3.0 | macOS | `ScanClean-macOS-1.3.0.dmg` | New sidebar UI; multi-file merge + landscape A4 fix |
+| v1.3.1 | macOS | `ScanClean-macOS-1.3.1.dmg` | New sidebar UI; multi-file merge + landscape A4 fix |
 | v1.2.1 | iOS | `ScanClean-iOS-1.2.1-unsigned.ipa` | Native app, fully on-device, self-sign to install |
 | v1.0.1 | Windows | `ScanClean-Windows-portable.zip` | Portable, bundled Python + deps, drag-and-drop |
 

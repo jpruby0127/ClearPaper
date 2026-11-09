@@ -121,25 +121,30 @@ enum T {
                 blue: CGFloat(v & 0xFF) / 255, alpha: 1)
     }
 
-    static let canvas    = dyn(hex(0xF6F7F9), hex(0x0F1115))
-    static let sidebar   = dyn(hex(0xF1F2F4), hex(0x0E1014))
-    static let panel     = dyn(hex(0xFFFFFF), hex(0x171A20))
-    static let panel2    = dyn(hex(0xFAFBFC), hex(0x1B1F26))
-    static let ink       = dyn(hex(0x14171C), hex(0xEEF0F4))
-    static let ink2      = dyn(hex(0x3D434D), hex(0xC9CED6))
-    static let sub       = dyn(hex(0x6B7280), hex(0x9AA2AE))
-    static let mute      = dyn(hex(0x9AA1AD), hex(0x6D7480))
-    static let line      = dyn(hex(0xE9EBEF), hex(0x262A32))
-    static let line2     = dyn(hex(0xF1F2F5), hex(0x20242B))
-    static let graySoft  = dyn(hex(0xF1F2F4), hex(0x20242B))
+    // 色值对齐 Purrge：浅色侧栏 #EBEBEE / 内容底 #F6F6F7 / 卡片白；
+    // 深色不是纯黑，而是暖灰 #262628 / #1C1C1E / #2A2A2D。
+    static let canvas    = dyn(hex(0xF6F6F7), hex(0x1C1C1E))
+    static let sidebar   = dyn(hex(0xEBEBEE), hex(0x262628))
+    static let panel     = dyn(hex(0xFFFFFF), hex(0x2A2A2D))
+    static let panel2    = dyn(hex(0xFAFAFB), hex(0x232326))
+    static let ink       = dyn(hex(0x1B1B1E), hex(0xF2F2F4))
+    static let ink2      = dyn(hex(0x3A3A3F), hex(0xC9C9CE))
+    static let sub       = dyn(hex(0x6C6C72), hex(0x9A9AA0))
+    static let mute      = dyn(hex(0x9A9AA0), hex(0x6E6E74))
+    static let line      = dyn(hex(0xE4E4E8), hex(0x3A3A3D))
+    static let line2     = dyn(hex(0xEFEFF2), hex(0x303033))
+    static let graySoft  = dyn(hex(0xEDEDF0), hex(0x343437))
+    static let navSelected = dyn(hex(0xD8D8DB), hex(0x3D3D3E))
+    static let navHover    = dyn(hex(0xE2E2E6), hex(0x323234))
+    static let pillBg      = dyn(hex(0xE3E3E6), hex(0x38383A))
     static let amber     = dyn(hex(0xE08A00), hex(0xF0A83C))
-    static let amberSoft = dyn(hex(0xFFF3DC), hex(0x2E2412))
+    static let amberSoft = dyn(hex(0xFFF3DC), hex(0x3A2B12))
     static let green     = dyn(hex(0x12A374), hex(0x35C79B))
-    static let greenSoft = dyn(hex(0xE6F6F0), hex(0x11291F))
+    static let greenSoft = dyn(hex(0xE6F6F0), hex(0x163024))
     static let blue      = dyn(hex(0x2F6BFF), hex(0x6B9BFF))
-    static let blueSoft  = dyn(hex(0xEAF0FF), hex(0x18233D))
+    static let blueSoft  = dyn(hex(0xEAF0FF), hex(0x1E2A44))
     static let red       = dyn(hex(0xE5484D), hex(0xFF6B6F))
-    static let redSoft   = dyn(hex(0xFDECEC), hex(0x321A1C))
+    static let redSoft   = dyn(hex(0xFDECEC), hex(0x3A2023))
 
     static let cardR: CGFloat = 14
     static let sidebarW: CGFloat = 236
@@ -335,7 +340,7 @@ final class StatusPill: ColorView {
     }
 
     init() {
-        super.init(color: T.graySoft)
+        super.init(color: T.pillBg)
         layer?.cornerRadius = 9
         layer?.cornerCurve = .continuous
 
@@ -422,7 +427,7 @@ final class NavRow: NSView {
 
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() {
-        layer?.backgroundColor = (isSelected || hover) ? T.graySoft.cgColor : NSColor.clear.cgColor
+        layer?.backgroundColor = (isSelected ? T.navSelected : (hover ? T.navHover : T.sidebar)).cgColor
         iconView.contentTintColor = isSelected ? T.amber : T.sub
         titleLabel.textColor = isSelected ? T.ink : T.ink2
         titleLabel.font = .systemFont(ofSize: 13.5, weight: isSelected ? .semibold : .medium)
@@ -978,7 +983,7 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         icon.layer?.masksToBounds = true
 
         let name = label("试卷清晰化", 16, .bold, T.ink)
-        let by = label("by ClearPaper", 11.5, .medium, T.mute)
+        let by = label("by jpruby", 11.5, .medium, T.mute)
         let titles = vstack([name, by], spacing: 1)
         let head = hstack([icon, titles], spacing: 11, alignment: .centerY)
         head.translatesAutoresizingMaskIntoConstraints = false
