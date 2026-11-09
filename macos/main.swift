@@ -147,7 +147,7 @@ enum T {
     static let redSoft   = dyn(hex(0xFDECEC), hex(0x3A2023))
 
     static let cardR: CGFloat = 14
-    static let sidebarW: CGFloat = 236
+    static let sidebarW: CGFloat = 208
 }
 
 // MARK: - 基础小组件
@@ -185,6 +185,7 @@ func hstack(_ views: [NSView], spacing: CGFloat = 8,
     s.translatesAutoresizingMaskIntoConstraints = false
     return s
 }
+
 
 func vstack(_ views: [NSView], spacing: CGFloat = 10,
             alignment: NSLayoutConstraint.Attribute = .leading) -> NSStackView {
@@ -301,8 +302,8 @@ final class PageScroll: NSScrollView {
             doc.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             doc.topAnchor.constraint(equalTo: contentView.topAnchor),
             doc.widthAnchor.constraint(equalTo: contentView.widthAnchor),
-            stack.leadingAnchor.constraint(equalTo: doc.leadingAnchor, constant: 36),
-            stack.trailingAnchor.constraint(equalTo: doc.trailingAnchor, constant: -36),
+            stack.leadingAnchor.constraint(equalTo: doc.leadingAnchor, constant: 26),
+            stack.trailingAnchor.constraint(equalTo: doc.trailingAnchor, constant: -26),
             stack.topAnchor.constraint(equalTo: doc.topAnchor, constant: 54),
             stack.bottomAnchor.constraint(equalTo: doc.bottomAnchor, constant: -28),
         ])
@@ -894,7 +895,11 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)
         window.backgroundColor = T.canvas
-        window.minSize = NSSize(width: 940, height: 640)
+        window.minSize = NSSize(width: 760, height: 540)
+        if let spec = ProcessInfo.processInfo.environment["SCANPDF_SIZE"] {
+            let parts = spec.lowercased().split(separator: "x").compactMap { Double($0) }
+            if parts.count == 2 { window.setContentSize(NSSize(width: parts[0], height: parts[1])) }
+        }
         window.center()
 
         let root = ColorView(color: T.canvas)
@@ -1328,6 +1333,8 @@ final class App: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTable
         let b = label(body, 11.5, .regular, T.sub)
         b.maximumNumberOfLines = 0
         b.lineBreakMode = .byWordWrapping
+        b.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        b.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let stack = vstack([box, t, b], spacing: 8)
         stack.translatesAutoresizingMaskIntoConstraints = false
         t.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
