@@ -40,11 +40,9 @@ fi
 swiftc -parse-as-library -O -disable-sandbox \
   -target arm64-apple-ios16.0-simulator -sdk "$SDK" \
   -framework SwiftUI -framework UIKit -framework PDFKit -framework ImageIO \
-  -framework Vision -framework VisionKit -framework PhotosUI \
-  -framework AVFoundation -framework CoreImage -framework CoreMedia \
-  -framework CoreVideo -framework QuartzCore \
+  -framework Vision -framework VisionKit -framework PhotosUI -framework CoreImage \
   -o "$STAGE/ClearPaper" "$TOOLS/engine/Core.swift" "$TOOLS/engine/Merge.swift" \
-     "$TOOLS/ios/Capture.swift" "$TOOLS/ios/AutoCamera.swift" "$TOOLS/ios/App.swift"
+     "$TOOLS/ios/Capture.swift" "$TOOLS/ios/ScanReview.swift" "$TOOLS/ios/App.swift"
 
 cp "$TOOLS/ios/sim_info.plist" "$STAGE/Info.plist"
 cp "$TOOLS/ios/Logo.png" "$STAGE/Logo.png"

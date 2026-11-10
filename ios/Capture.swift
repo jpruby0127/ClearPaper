@@ -100,42 +100,127 @@ enum Capture {
         VNDocumentCameraViewController.isSupported
     }
 
+    /// 找边预处理的三档策略。
+    enum RectifyMode {
+        /// 系统文档相机：只有检测到仍带桌面背景的页才补裁，其余原样保留。
+        case auto
+        /// 相册原帧：逐页尝试找边 + 透视矫正，找不到才用原图。
+        case always
+    }
+
+    struct PageSignature {
+        let gray: [UInt8]
+        let hash: UInt64
+    }
+
+    static func signature(_ image: UIImage) -> PageSignature? {
+        guard let g = PageFingerprint.gray(image) else { return nil }
+        return PageSignature(gray: g, hash: PageFingerprint.dHash(g))
+    }
+
     /// 剔除自动连拍带进来的重复页。系统文档相机的自动快门无法从外部关掉，
     /// 来不及翻页时同一页会被连拍好几次，只能在收结果时去重。
     ///
     /// 两档阈值：相邻页用宽松阈值（拍同一页时手抖/曝光差异较大），
     /// 非相邻页用严格阈值（几乎逐像素相同才判重复），
     /// 这样 A-B-A 式连拍能去掉，版式相近但内容不同的两页不会被误删。
-    static func uniquePages(_ images: [UIImage]) -> [UIImage] {
-        var out: [UIImage] = []
-        var kept: [(g: [UInt8], h: UInt64)] = []
-        for img in images {
-            guard let g = PageFingerprint.gray(img) else { out.append(img); continue }
-            let h = PageFingerprint.dHash(g)
-            var duplicate = false
-            if let last = kept.last {
-                duplicate = PageFingerprint.distance(last.h, h) <= 10
-                    && PageFingerprint.meanDiff(last.g, g) <= 9
-            }
-            if !duplicate {
-                duplicate = kept.contains { k in
-                    PageFingerprint.distance(k.h, h) <= 5
-                        && PageFingerprint.meanDiff(k.g, g) <= 5
-                }
-            }
-            if duplicate { continue }
-            out.append(img)
-            kept.append((g, h))
+    static func isDuplicate(_ s: PageSignature, kept: [PageSignature]) -> Bool {
+        if let last = kept.last,
+           PageFingerprint.distance(last.hash, s.hash) <= 10,
+           PageFingerprint.meanDiff(last.gray, s.gray) <= 9 { return true }
+        return kept.contains { k in
+            PageFingerprint.distance(k.hash, s.hash) <= 5
+                && PageFingerprint.meanDiff(k.gray, s.gray) <= 5
         }
-        return out
+    }
+
+    /// 分成「保留页 / 判为重复的页」两堆，检查页据此提供「恢复」按钮。
+    static func splitPages(_ images: [UIImage]) -> (kept: [UIImage], dropped: [UIImage]) {
+        var kept: [UIImage] = [], dropped: [UIImage] = [], sigs: [PageSignature] = []
+        for img in images {
+            guard let s = signature(img) else { kept.append(img); continue }
+            if isDuplicate(s, kept: sigs) { dropped.append(img) }
+            else { kept.append(img); sigs.append(s) }
+        }
+        return (kept, dropped)
+    }
+
+    static func uniquePages(_ images: [UIImage]) -> [UIImage] { splitPages(images).kept }
+
+    // MARK: - 图像整理（检查页与引擎共用的入口预处理）
+
+    /// 统一为 .up 方向，并把长边压到 2600px：手机 4000px 原图直接进 OCR /
+    /// ScanCore 很容易吃满内存；2600px 对 A4 300dpi 仍然绰绰有余。
+    static func normalized(_ image: UIImage, maxSide: CGFloat = 2600) -> UIImage {
+        guard let cg = uprightCG(image) else { return image }
+        let w = CGFloat(cg.width), h = CGFloat(cg.height)
+        let k = min(1, maxSide / max(w, h))
+        if k >= 1, image.imageOrientation == .up { return image }
+        let size = CGSize(width: max(1, round(w * k)), height: max(1, round(h * k)))
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = 1
+        fmt.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: fmt).image { _ in
+            UIImage(cgImage: cg, scale: 1, orientation: .up)
+                .draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// 顺时针旋转并真正重绘成 .up，下游 OCR / PDF 不需要再猜 EXIF 方向。
+    static func rotated(_ image: UIImage, degrees: Int) -> UIImage {
+        let r = ((degrees % 360) + 360) % 360
+        guard r != 0, let cg = uprightCG(image) else { return image }
+        let s = CGSize(width: CGFloat(cg.width), height: CGFloat(cg.height))
+        let swap = r == 90 || r == 270
+        let out = swap ? CGSize(width: s.height, height: s.width) : s
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = 1
+        fmt.opaque = true
+        return UIGraphicsImageRenderer(size: out, format: fmt).image { ctx in
+            let c = ctx.cgContext
+            c.translateBy(x: out.width / 2, y: out.height / 2)
+            c.rotate(by: CGFloat(r) * .pi / 180)
+            UIImage(cgImage: cg, scale: 1, orientation: .up)
+                .draw(in: CGRect(x: -s.width / 2, y: -s.height / 2,
+                                 width: s.width, height: s.height))
+        }
+    }
+
+    static func thumbnail(_ image: UIImage, width: CGFloat = 360) -> UIImage? {
+        let s = image.size
+        guard s.width > 1, s.height > 1 else { return nil }
+        let size = CGSize(width: width, height: max(1, s.height * width / s.width))
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = 1
+        fmt.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: fmt).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// 判断系统相机这一页是否「还带着桌面 / 阴影」：四周边框明显暗于纸面中心。
+    /// 已裁好的白底扫描件哪怕有横线、页眉，边缘均值依旧接近纸白，不会误判。
+    static func needsRectify(_ image: UIImage) -> Bool {
+        guard let cg = uprightCG(image), let g = graySmall(cg, w: 64, h: 64) else { return false }
+        let b = 4
+        var edge = 0, edgeN = 0, center = 0, centerN = 0
+        for y in 0..<64 {
+            for x in 0..<64 {
+                let v = Int(g[y * 64 + x])
+                if x < b || x >= 64 - b || y < b || y >= 64 - b { edge += v; edgeN += 1 }
+                if x >= 21 && x < 43 && y >= 21 && y < 43 { center += v; centerN += 1 }
+            }
+        }
+        return center / max(1, centerN) - edge / max(1, edgeN) > 32
     }
 
     // MARK: - 纸张找边 + 透视矫正（拍照链路的入口预处理）
     //
     // 系统文档相机（VNDocumentCameraViewController）吐出来的已经是裁好边、
     // 矫正过透视、做过画质增强的纸面图，不需要也不能再动一次。
-    // 但从相册导入的照片、以及可选的翻页自动拍相机给的是原始画面：
-    // 带桌面、阴影、歪斜。直接喂给 ScanCore 的话，平场归一化会把深色桌面
+// 但从相册导入的照片给的是原始画面：带桌面、阴影、歪斜。
+// 系统文档相机偶尔也会裁边失败、返回仍带背景的整帧。
+// 直接喂给 ScanCore 的话，平场归一化会把深色桌面
     // 当成纸白、裁边会把整帧当内容，出来的就是「瑕疵品」。
     //
     // 这里先用 Vision 的文档分割（比通用矩形检测更适合试卷）找到纸张四角，
@@ -332,11 +417,14 @@ enum Capture {
     }
 
     /// 逐页矫正；返回矫正后的页与真正被裁过边的页数。
-    static func prepare(_ images: [UIImage]) -> (pages: [UIImage], rectified: Int) {
+    /// `.auto` 只处理仍带背景的页（系统文档相机），`.always` 逐页尝试（相册原帧）。
+    static func prepare(_ images: [UIImage], mode: RectifyMode = .always)
+        -> (pages: [UIImage], rectified: Int) {
         var out: [UIImage] = []
         var count = 0
         for img in images {
-            if let r = rectify(img) { out.append(r); count += 1 }
+            let should = mode == .always || needsRectify(img)
+            if should, let r = rectify(img) { out.append(r); count += 1 }
             else { out.append(img) }
         }
         return (out, count)

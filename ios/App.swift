@@ -48,7 +48,7 @@ enum About {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.5.0"
     }
     static var build: String {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "9"
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "10"
     }
     static var versionLine: String { "版本 \(version) (\(build))" }
     static let author = "jpruby"
@@ -64,7 +64,7 @@ enum Tab: Int { case process = 0, merge = 1, files = 2, about = 3 }
 struct URLItem: Identifiable { let id = UUID(); let url: URL }
 
 enum Sheet: Identifiable {
-    case preview(URL), share(URL), export(URL), text(URL), scanner
+    case preview(URL), share(URL), export(URL), text(URL), scanner, review(ScanBatch)
     var id: String {
         switch self {
         case .preview(let u): return "p-\(u.absoluteString)"
@@ -72,6 +72,7 @@ enum Sheet: Identifiable {
         case .export(let u): return "e-\(u.absoluteString)"
         case .text(let u): return "t-\(u.absoluteString)"
         case .scanner: return "scanner"
+        case .review(let b): return "r-\(b.id.uuidString)"
         }
     }
 }
@@ -89,6 +90,7 @@ final class Router: ObservableObject {
     func showText(_ u: URL) { sheet = .text(u) }
     func pick() { picking = true }
     func scan() { sheet = .scanner }
+    func review(_ b: ScanBatch) { sheet = .review(b) }
     func close() { sheet = nil }
     func goto(_ t: Tab) { requestedTab = t }
 }
@@ -163,12 +165,6 @@ final class Store: ObservableObject {
     @Published var appearance: Int {
         didSet { UserDefaults.standard.set(appearance, forKey: "cp.appearance") }
     }
-    /// 0 = 系统文档相机（默认，自动找边 / 透视矫正 / 画质增强）
-    /// 1 = 翻页自动拍（实验，自研快门防重复，但裁边弱于系统相机）
-    @Published var captureMode: Int {
-        didSet { UserDefaults.standard.set(captureMode, forKey: "cp.captureMode") }
-    }
-
     var scheme: ColorScheme? {
         appearance == 1 ? .light : (appearance == 2 ? .dark : nil)
     }
@@ -182,8 +178,8 @@ final class Store: ObservableObject {
         deghost = d.object(forKey: "cp.deghost") as? Bool ?? true
         autoProcess = d.object(forKey: "cp.auto") as? Bool ?? true
         appearance = d.object(forKey: "cp.appearance") as? Int ?? 0
-        // 升级用户若曾打开实验相机，默认仍回到成像质量更好的系统文档相机。
-        captureMode = 0
+        // 旧版曾写入「实验相机」开关，升级后清掉避免残留无用偏好。
+        d.removeObject(forKey: "cp.captureMode")
         if let n = d.object(forKey: "cp.mergeMode") as? Int,
            let m = MergeMode(rawValue: n) { mergeMode = m }
         ScanCore.deghostEnabled = deghost
@@ -254,14 +250,15 @@ final class Store: ObservableObject {
 
     // MARK: 任务
 
-    /// 拍照 / 相册图片 → 去重 → 找边矫正 → PDF → 本机 OCR → 文字稿
+    /// 拍照 / 相册图片 → 找边矫正 → PDF → 本机 OCR → 文字稿
     /// → **完整** ScanCore 流程（平场归一化 / 去透印 / gamma / 单向锐化 / 裁边 / A4 / 笔画闸门）。
     /// 识别出的首页标题会同时用作任务名与输出文件名，拍完即可归档。
-    /// - needsRectify: 系统文档相机已经输出裁好的纸面图，传 false 跳过二次矫正；
-    ///   相册照片与实验相机给的是原帧，需要补一次找边 + 透视矫正。
-    func addCaptured(_ images: [UIImage], needsRectify: Bool = true) {
-        // 系统相机来不及翻页会连拍同一页；收结果时全局去重。
-        let pages = Capture.uniquePages(images)
+    /// - rectify: `.auto` 用于系统文档相机（只补裁仍带背景的页），
+    ///   `.always` 用于相册原帧（逐页尝试找边）。
+    /// - dedup / dropped: 已在「检查拍摄页」完成去重时传 false，避免二次剔除用户恢复的页。
+    func addCaptured(_ images: [UIImage], rectify: Capture.RectifyMode = .always,
+                     dedup: Bool = true, dropped: Int = 0) {
+        let pages = dedup ? Capture.uniquePages(images) : images
         guard !pages.isEmpty else { return }
         let fm = FileManager.default
         let dir = captureRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -282,12 +279,10 @@ final class Store: ObservableObject {
             df.dateFormat = "yyyyMMdd-HHmmss"
             let stamp = df.string(from: Date())
 
-            // 关键一步：相册照片 / 自研相机给的是带桌面、阴影、歪斜的原帧，
-            // 先裁成干净的纸面图，后面的扫描清理流程才不会被脏背景带偏。
-            // 系统文档相机已经裁好的图会被自动跳过，不会二次伤害。
-            let prepared: (pages: [UIImage], rectified: Int) = needsRectify
-                ? Capture.prepare(pages)
-                : (pages: pages, rectified: 0)
+            // 相册原帧必然带桌面、阴影、歪斜；系统文档相机偶尔也会裁边失败。
+            // .auto 逐页判断「四周是否明显暗于纸面」，只补裁真正带背景的页；
+            // 已经裁好的纸面图保持原样，绝不做二次裁剪伤害笔画。
+            let prepared = Capture.prepare(pages, mode: rectify)
             let clean = prepared.pages
             // 落盘的是矫正后的页：系统清掉 tmp 后重试也能得到同样的输入。
             for (i, img) in clean.enumerated() {
@@ -314,15 +309,15 @@ final class Store: ObservableObject {
 
             j.outputStem = stem
             let lineCount = ocr.reduce(0) { $0 + $1.lines.count }
-            let dropped = images.count - pages.count
+            let droppedCount = dedup ? images.count - pages.count : dropped
             DispatchQueue.main.async {
                 j.name = title
                 j.textURL = txt
                 j.ocrLines = lineCount
                 j.rectified = prepared.rectified
-                j.dropped = dropped
-                j.phase = dropped > 0
-                    ? "已跳过 \(dropped) 张重复页 · 进入完整文档清理…"
+                j.dropped = droppedCount
+                j.phase = droppedCount > 0
+                    ? "已跳过 \(droppedCount) 张重复页 · 进入完整文档清理…"
                     : "找边矫正完成，进入完整文档清理…"
             }
             self.makeThumb(j)
@@ -896,7 +891,8 @@ struct ProcessView: View {
                 }
                 await MainActor.run {
                     photos = []
-                    store.addCaptured(imgs)
+                    guard !imgs.isEmpty else { return }
+                    router.review(ScanBatch(images: imgs, fromCamera: false))
                 }
             }
         }
@@ -908,22 +904,22 @@ struct ProcessView: View {
     }
 
     var captureRow: some View {
-        HStack(spacing: 10) {
-            Button {
-                // 系统文档相机在模拟器 / 无相机设备上不可用，先给出提示；
-                // 实验版翻页自动拍相机自带兜底界面。
-                if store.captureMode == 0 && !Capture.scannerSupported {
-                    cameraUnsupported = true
-                } else {
-                    router.scan()
-                }
-            } label: {
-                captureTile("camera.viewfinder", "拍照扫描", Pal.amber)
-            }.buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Button {
+                    if Capture.scannerSupported { router.scan() }
+                    else { cameraUnsupported = true }
+                } label: {
+                    captureTile("camera.viewfinder", "拍照扫描", Pal.amber)
+                }.buttonStyle(.plain)
 
-            PhotosPicker(selection: $photos, maxSelectionCount: 20, matching: .images) {
-                captureTile("photo.on.rectangle", "从相册选", Pal.blue)
+                PhotosPicker(selection: $photos, maxSelectionCount: 12, matching: .images) {
+                    captureTile("photo.on.rectangle", "从相册选", Pal.blue)
+                }
             }
+            Text("系统文档相机会自动找边与矫正透视。纸张放平、避开阴影；拍完可逐页检查、删重、旋转，重复页会自动剔除。")
+                .font(.caption2).foregroundStyle(Pal.sub)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -973,18 +969,9 @@ struct ProcessView: View {
                     Spacer()
                 }
                 .padding(.bottom, 6)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("拍摄方式").font(.footnote.weight(.medium)).foregroundStyle(Pal.ink)
-                    Picker("拍摄方式", selection: $store.captureMode) {
-                        Text("系统文档相机").tag(0)
-                        Text("翻页自动拍 · 实验").tag(1)
-                    }
-                    .pickerStyle(.segmented)
-                    Text(store.captureMode == 0
-                         ? "系统相机自动找边、矫正透视、增强画质；来不及翻页造成的重复页会在收结果时自动剔除。"
-                         : "自研快门在拍完一张后锁死，检测到翻页才解锁；裁边弱于系统相机，作为可选实验模式。")
-                        .font(.caption2).foregroundStyle(Pal.sub)
-                }
+                Text("拍照与相册导入的页面都会先经过检查页：可删页、旋转、调序，系统相机连拍的重复页自动剔除；确认后才进入和导入 PDF 完全相同的清理流程。")
+                    .font(.caption2).foregroundStyle(Pal.sub)
+                    .fixedSize(horizontal: false, vertical: true)
                 Divider().background(Pal.line).padding(.vertical, 8)
                 Toggle(isOn: $store.deghost) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -1538,10 +1525,10 @@ struct AboutView: View {
                 Card(padding: 14) {
                     VStack(alignment: .leading, spacing: 8) {
                         SectionTitle(title: "关于拍照与清理")
-                        Text("默认使用系统文档相机：自动找边、透视矫正、画质增强，这是成像质量最好的一条路。来不及翻页造成的重复页会在收结果时按页面指纹剔除。相册导入或实验相机的原帧会先补一道纸张找边矫正，之后所有拍照件都必须走完和导入 PDF 完全相同的清理流程：白场归一 → 去透印 → 自适应 gamma → 单向锐化 → 裁边 → A4 → 笔画闸门。")
+                        Text("只用系统文档相机：自动找边、透视矫正、画质增强，这是成像质量最好的一条路。拍完会进入「检查拍摄页」，逐页缩略图可删除、旋转 90°、调整顺序；来不及翻页造成的重复页按页面指纹自动剔除，也能一键恢复。原先的实验性自研相机因裁边不准，已彻底移除。")
                             .font(.caption2).foregroundStyle(Pal.sub)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("「处理」页可切到实验性的翻页自动拍：拍完锁定快门，检测到翻页才解锁。它防重复，但自动裁边目前弱于系统相机。")
+                        Text("系统相机偶尔裁边失败仍有桌面背景时，App 会逐页检测并只对这些页补一次找边 + 透视矫正；已经裁好的页面原样保留，不会二次裁剪。之后所有拍照件都必须走完和导入 PDF 完全相同的清理流程：白场归一 → 去透印 → 自适应 gamma → 单向锐化 → 裁边 → A4 → 笔画闸门。")
                             .font(.caption2).foregroundStyle(Pal.sub)
                             .fixedSize(horizontal: false, vertical: true)
                         Divider().background(Pal.line)
@@ -1648,20 +1635,47 @@ struct ContentView: View {
             // 调试入口：simctl launch ... -ClearPaperSheet scanner 可直接打开相机页，
             // 方便在没有摄像头的模拟器里检查兜底界面。
             let args = ProcessInfo.processInfo.arguments
-            if let i = args.firstIndex(of: "-ClearPaperSheet"), i + 1 < args.count,
-               args[i + 1] == "scanner" {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { router.scan() }
+            if let i = args.firstIndex(of: "-ClearPaperSheet"), i + 1 < args.count {
+                let which = args[i + 1]
+                if which == "scanner" {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { router.scan() }
+                } else if which == "review" {
+                    // 用同一张图重复三次，验证检查页的自动去重与「恢复」按钮。
+                    let docs = FileManager.default.urls(for: .documentDirectory,
+                                                       in: .userDomainMask)[0]
+                    let p = docs.appendingPathComponent("ClearPaper-Test.png")
+                    if let img = UIImage(contentsOfFile: p.path) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                            router.review(ScanBatch(images: [img, img, img], fromCamera: true))
+                        }
+                    }
+                }
             }
             // 回归测试入口：把一张「带桌面背景的歪斜试卷照片」放进 Documents，
             // 启动时用 -ClearPaperTestImage 走完整的拍照 → 找边矫正 → ScanCore 链路。
             // 仅当显式传参时触发，对正常用户完全不可见。
-            if args.contains("-ClearPaperTestImage") {
+            if args.contains("-ClearPaperTestImage") || args.contains("-ClearPaperAutoRectify")
+                || args.contains("-ClearPaperReviewConfirm") {
                 let docs = FileManager.default.urls(for: .documentDirectory,
                                                    in: .userDomainMask)[0]
                 let p = docs.appendingPathComponent("ClearPaper-Test.png")
                 if let img = UIImage(contentsOfFile: p.path) {
+                    let auto = args.contains("-ClearPaperAutoRectify")
+                    let review = args.contains("-ClearPaperReviewConfirm")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                        store.addCaptured([img])
+                        if review {
+                            // 走检查页的真实数据链路：落盘 → 去重 → 读回 → 完整清理。
+                            let batch = ScanBatch(images: [img, img], fromCamera: true)
+                            let pages = batch.confirmPages()
+                            let dropped = batch.dropped.count
+                            batch.cleanup()
+                            store.addCaptured(pages, rectify: .auto, dedup: false,
+                                              dropped: dropped)
+                        } else {
+                            // .auto 是系统文档相机专用路径：只补裁仍带背景的页。
+                            store.addCaptured([img], rectify: auto ? .auto : .always,
+                                              dedup: false)
+                        }
                     }
                 }
             }
@@ -1712,30 +1726,24 @@ struct SheetContent: View {
         case .text(let u):
             TextViewSheet(url: u)
         case .scanner:
-            // 默认走系统文档相机：它自带自动找边、透视矫正与画质增强，
-            // 成像质量远高于自研取景器；翻页自动拍是可手动打开的实验模式。
-            if store.captureMode == 1 {
-                AutoCameraSheet(
-                    done: { imgs in
-                        router.close()
-                        store.addCaptured(imgs)
-                        router.goto(.process)
-                    },
-                    cancel: { router.close() }
-                )
-            } else if !Capture.scannerSupported {
+            if !Capture.scannerSupported {
                 ScannerFallback { router.close() }
             } else {
                 DocumentScanner(
                     done: { imgs in
+                        guard !imgs.isEmpty else { router.close(); return }
                         router.close()
-                        // VisionKit 已自动找边、透视矫正并增强画质，不要二次裁剪。
-                        store.addCaptured(imgs, needsRectify: false)
-                        router.goto(.process)
+                        // 等系统相机 dismiss 动画结束，再展示检查页。
+                        let batch = ScanBatch(images: imgs, fromCamera: true)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                            router.review(batch)
+                        }
                     },
                     cancel: { router.close() }
                 ).ignoresSafeArea()
             }
+        case .review(let batch):
+            ScanReviewView(batch: batch)
         }
     }
 }
