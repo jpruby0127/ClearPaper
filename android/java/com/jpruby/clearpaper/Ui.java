@@ -16,7 +16,7 @@ import android.widget.TextView;
 public final class Ui {
     private Ui() {}
     public static final String VERSION = "1.5.0";
-    public static final String BUILD = "10";
+    public static final String BUILD = "11";
     public static final String AUTHOR = "jpruby";
     public static final String REPO = "https://github.com/jpruby0127/ClearPaper";
 

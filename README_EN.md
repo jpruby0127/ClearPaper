@@ -105,13 +105,13 @@ The app bundles its own engine — **no Python, venv, or config needed** on the 
 
 ### Android · install the APK
 
-1. Download **`ClearPaper-Android-1.5.0.apk`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases) (~150 KB, Android 8.0+, pure Java, no native libs);
+1. Download **`ClearPaper-Android-1.5.0.apk`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases) (~161 KB, Android 8.0+, pure Java, no native libs);
 2. Allow "install unknown apps" once, then open the APK;
 3. In WeChat, open a paper → "Open in another app" → choose **ClearPaper**; or import PDFs, capture pages, or pick photos from the Process tab.
 
-> Same as iOS: four tabs (Process / Merge / Files / About), logo, `by jpruby`, real version 1.5.0 (10), the page-review screen (delete / rotate / reorder / duplicate removal with restore), three merge modes, preview / print / share / save, and the appearance setting. Output lives in the app's own `清晰版` folder; use Share / Save to export it to the system file manager.
+> Same as iOS: four tabs (Process / Merge / Files / About), logo, `by jpruby`, real version 1.5.0 (11), the page-review screen (delete / rotate / reorder / duplicate removal with restore), three merge modes, preview / print / share / save, and the appearance setting. Output lives in the app's own `清晰版` folder; use Share / Save to export it to the system file manager.
 >
-> Two platform gaps are bridged with equivalent implementations — see "Android notes" below: Android has no system document camera and no offline system OCR.
+> Two platform gaps are bridged with equivalent implementations — see "Android notes" below: Android has no system document camera and no offline system OCR. The camera is built into the app (Camera2), and devices with no camera hardware hide the capture entry entirely and go straight to the gallery.
 
 ### Windows · portable, no install
 
@@ -171,13 +171,15 @@ Android mirrors the UI and pipeline, with equivalent implementations for the two
 
 | Capability | iOS | Android |
 |---|---|---|
-| Multi-page capture | VisionKit document camera (auto shutter) | **Manual shutter, one page at a time** — no duplicate shots when you don't turn the page fast enough; page review still does dHash dedup with one-tap restore |
+| Multi-page capture | VisionKit document camera (auto shutter) | **Built-in Camera2 camera** (does not call a system camera app): manual shutter one page at a time, optional fill light — no duplicate shots when you don't turn the page fast enough; page review still does dHash dedup with one-tap restore |
 | Edge / perspective correction | Vision document segmentation + geometric fallback | Pure geometry (Otsu + bright-run fitting + least squares + inverse homography); falls back to the original frame when no reliable paper edge exists — never a guessed crop |
 | OCR transcript | System Vision, offline, zero payload | Offline by default; enter your own Xiaomi-OCR-0 endpoint under About → OCR service to generate Markdown transcripts and auto-name from the first page |
 | PDF merge | PDFKit inserts pages as-is | `PdfRenderer` re-renders at 200 dpi; order / orientation / duplex blank pages are identical; pure-vector PDFs become image pages |
 | Cleanup engine | `engine/Core.swift` (Swift) | Line-by-line port `GrayMath.java` + a hand-written grayscale Flate image XObject writer `PdfWrite.java`; `android/test/run_test.sh` runs a JVM regression test on a Mac |
 
 Everything else is identical: white-point normalization → show-through suppression → adaptive gamma → darken-only sharpening → crop → portrait/landscape A4 → stroke-retention gate. Captured pages always run the full pipeline.
+
+**On "no usable camera on this device"**: build 10 launched a system camera app via `MediaStore.ACTION_IMAGE_CAPTURE`. On Android 11+ that hits two traps at once — no `<queries>` declaration means package visibility filtering can hide every camera app, and declaring the `CAMERA` permission without requesting it at runtime makes camera apps refuse the request. The result was this misleading error on phones that do have a camera. Build 11 uses a **built-in camera** (`CameraActivity.java`: Camera2 + `TextureView` preview + `ImageReader` capture, runtime `CAMERA` permission, orientation and size normalization done in-app without relying on EXIF), with no dependency on any external camera app. `<queries>` is now declared for the system-camera fallback. Devices with no camera hardware (emulators, some tablets, cloud phones) hide the capture tile and go straight to the gallery; a denied permission or an occupied camera produces a specific reason plus gallery / system-camera fallbacks.
 
 ### Advanced: Xiaomi's open-source Xiaomi-OCR-0
 
@@ -236,7 +238,7 @@ cd android
 ./test/run_test.sh    # pure-JVM regression test for the engine + PDF writer, no emulator needed
 ```
 
-> Only Android SDK `build-tools` and any `platforms/android-3x/android.jar` are required — **no Gradle / AndroidX / Maven / network**. The UI is built from framework Views, the engine is `GrayMath.java`, PDFs are written directly by `PdfWrite.java`, and merging uses the system `PdfRenderer`. The APK is v1 + v2 + v3 signed with a locally generated keystore.
+> Only Android SDK `build-tools` and any `platforms/android-3x/android.jar` are required — **no Gradle / AndroidX / Maven / network**. The UI is built from framework Views, the engine is `GrayMath.java`, PDFs are written directly by `PdfWrite.java`, and merging uses the system `PdfRenderer`. The APK is v1 + v2 + v3 signed with a locally generated keystore. The camera is `CameraActivity.java` on the system Camera2 API — no camera SDK or native library.
 
 ## 🐍 Python reference engine (optional)
 
@@ -270,7 +272,7 @@ Issues and PRs welcome — let's make this a real open-source gem together.
 |---|---|---|---|
 | v1.5.0 | macOS | `ClearPaper-macOS-1.5.0.dmg` | New logo + ClearPaper rebrand; sidebar UI |
 | v1.5.0 | iOS | `ClearPaper-iOS-1.5.0-unsigned.ipa` | build 10: system document camera only, new "Check Pages" review screen (delete / rotate / reorder / duplicate removal with one-tap restore), per-page detection and rectification when VisionKit failed to crop, orientation and size normalization; the experimental custom camera is gone; captures still run the full ScanCore pipeline; four-tab UI, `by jpruby` + real version, on-device OCR transcript, multi-file merge, file manager, appearance setting; optional Xiaomi-OCR-0 backend |
-| v1.5.0 | Android | `ClearPaper-Android-1.5.0.apk` | First Android build: four-tab UI aligned with iOS, warm-grey palette / logo / `by jpruby` / v1.5.0 (10); capture + page review + geometric rectification + duplicate removal and restore, full cleanup engine, three merge modes, file manager, preview / print / share / save, appearance setting; optional Xiaomi-OCR-0 bridge, fully offline by default |
+| v1.5.0 | Android | `ClearPaper-Android-1.5.0.apk` | First Android build: four-tab UI aligned with iOS, warm-grey palette / logo / `by jpruby` / v1.5.0 (10); capture + page review + geometric rectification + duplicate removal and restore, full cleanup engine, three merge modes, file manager, preview / print / share / save, appearance setting; optional Xiaomi-OCR-0 bridge, fully offline by default; **build 11** switches to a built-in camera, fixing the false "no usable camera" error and adding a full gallery path for camera-less devices |
 | v1.2.0 | Windows | `ClearPaper-Windows-portable.zip` | ClearPaper rebrand; portable, bundled deps, drag-and-drop |
 
 > The Android APK is self-signed: Android will warn about an unknown source once at install time. It needs no Google Play services and no Google account.

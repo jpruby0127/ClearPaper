@@ -106,14 +106,19 @@ public final class Pages {
         private static View captureRow(Context c, Host h) {
             LinearLayout l = Ui.vbox(c);
             LinearLayout tiles = Ui.hbox(c);
-            FrameLayout cam = tileBig(c, "▣", "拍照扫描", Ui.amber(), h::startCamera);
-            tiles.addView(cam, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-            tiles.addView(Ui.spacer(c, 10));
+            boolean camOk = h.hasCamera();
+            if (camOk) {
+                FrameLayout cam = tileBig(c, "▣", "拍照扫描", Ui.amber(), h::startCamera);
+                tiles.addView(cam, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+                tiles.addView(Ui.spacer(c, 10));
+            }
             FrameLayout album = tileBig(c, "▤", "从相册选", Ui.blue(), h::pickImages);
             tiles.addView(album, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             l.addView(tiles);
-            Ui.add(l, Ui.text(c, "手动快门逐页拍，不会因来不及翻页重复拍同一张；拍完进入检查页可删页、旋转、调序，重复页自动剔除。相册照片会自动找边并做透视矫正。",
-                    11, Ui.sub(), false), 8);
+            String tip = camOk
+                    ? "内置相机手动快门逐页拍，不依赖系统相机 App；拍完进入检查页可删页、旋转、调序，重复页自动剔除。相册照片会自动找边并做透视矫正。"
+                    : "这台设备没有检测到相机硬件：直接用相册里的试卷照片即可，找边、透视矫正、检查页、去重与完整清理流程一样不少。";
+            Ui.add(l, Ui.text(c, tip, 11, Ui.sub(), false), 8);
             return l;
         }
 
@@ -527,8 +532,10 @@ public final class Pages {
 
             LinearLayout capture = Ui.card(c, 14);
             capture.addView(Ui.sectionTitle(c, "关于拍照与清理", null));
-            Ui.add(capture, Ui.text(c, "Android 没有系统文档相机，这里用手动快门逐页拍：不会因来不及翻页重复拍同一张；拍完进入「检查拍摄页」，可逐页删除、旋转 90°、调整顺序，重复页按页面指纹自动剔除，也能一键恢复。没有实验性质的自研自动相机。",
+            Ui.add(capture, Ui.text(c, "Android 版用 App 内置相机（Camera2）逐页拍，不依赖系统相机 App，也不会因来不及翻页重复拍同一张；支持补光，拍完进入「检查拍摄页」，可逐页删除、旋转 90°、调整顺序，重复页按页面指纹自动剔除，也能一键恢复。没有实验性质的自研自动相机。",
                     10, Ui.sub(), false), 8);
+            Ui.add(capture, Ui.text(c, "没有相机硬件的设备（模拟器、部分平板、云手机）会自动隐藏拍照入口，直接从相册选照片即可：找边矫正、检查页、去重与完整清理流程完全一样，不会留下一个点不动的按钮。相机权限被拒绝或相机被占用时，也会明确告诉原因并给出相册 / 系统相机两条退路。",
+                    10, Ui.sub(), false), 6);
             Ui.add(capture, Ui.text(c, "相册原帧带桌面、阴影、歪斜时，App 会逐页做几何找边 + 透视矫正；已经裁好的扫描件不会被二次裁剪。之后所有拍照件都走完和导入 PDF 完全相同的清理流程：白场归一 → 去透印 → 自适应 gamma → 单向锐化 → 裁边 → A4 → 笔画闸门。",
                     10, Ui.sub(), false), 8);
             Ui.add(capture, Ui.divider(c), 10);

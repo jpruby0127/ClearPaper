@@ -16,7 +16,7 @@ for p in "$BT/aapt2" "$BT/d8" "$BT/zipalign" "$BT/apksigner" "$JAR"; do
 done
 
 VERSION_NAME="1.5.0"
-VERSION_CODE="10"
+VERSION_CODE="11"
 APK_NAME="ClearPaper-Android-${VERSION_NAME}.apk"
 
 rm -rf "$OUT"

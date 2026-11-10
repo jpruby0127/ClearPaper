@@ -107,13 +107,13 @@ App 自带清晰化引擎，**朋友电脑不需要 Python、venv 或任何配�
 
 ### Android · 下载 APK 直接装
 
-1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ClearPaper-Android-1.5.0.apk`**（约 150 KB，Android 8.0+，纯 Java 无 so、armeabi / arm64 / x86 通用）；
+1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ClearPaper-Android-1.5.0.apk`**（约 161 KB，Android 8.0+，纯 Java 无 so、armeabi / arm64 / x86 通用）；
 2. 手机允许「安装未知来源应用」后点开 APK 安装即可；
 3. 微信里收到试卷 →「用其他应用打开」→ 选 **ClearPaper**；或在「处理」页导入 PDF、拍照扫描、从相册选。
 
-> 与 iOS 版一致：四个标签页（处理 / 合并 / 文件 / 关于）、Logo 与 `by jpruby`、真实版本 1.5.0 (10)、检查拍摄页（删页 / 旋转 / 调序 / 重复页剔除与恢复）、三种合并模式、预览 / 打印 / 分享 / 存文件、外观设置。输出在 App 自己的「清晰版」目录，通过「分享 / 存文件」导出到系统文件。
+> 与 iOS 版一致：四个标签页（处理 / 合并 / 文件 / 关于）、Logo 与 `by jpruby`、真实版本 1.5.0 (11)、检查拍摄页（删页 / 旋转 / 调序 / 重复页剔除与恢复）、三种合并模式、预览 / 打印 / 分享 / 存文件、外观设置。输出在 App 自己的「清晰版」目录，通过「分享 / 存文件」导出到系统文件。
 >
-> 平台没有的两块系统能力换成了等价实现，见下方「Android 版说明」：Android 无系统文档相机、无系统离线 OCR，分别用「手动快门 + 几何找边矫正 + 检查页」和「可选 Xiaomi-OCR-0 桥接」补齐。
+> 平台没有的两块系统能力换成了等价实现，见下方「Android 版说明」：Android 无系统文档相机、无系统离线 OCR，分别用「**App 内置 Camera2 相机** + 手动快门 + 几何找边矫正 + 检查页」和「可选 Xiaomi-OCR-0 桥接」补齐。**没有相机硬件的设备会自动隐藏拍照入口、直接走相册**，功能不打折；相机权限被拒绝或被占用时也会说明原因并给出退路。
 
 ### Windows · 解压即用（免安装）
 
@@ -173,13 +173,15 @@ Android 版把上面的界面与流程逐一搬了过来，平台没有的两块
 
 | 能力 | iOS | Android |
 |---|---|---|
-| 多页拍摄 | VisionKit 系统文档相机（自动快门） | **手动快门逐页拍**：天然不会因来不及翻页重复拍同一张；检查页仍做 dHash 去重与一键恢复 |
+| 多页拍摄 | VisionKit 系统文档相机（自动快门） | **App 内置 Camera2 相机**（不调用系统相机 App）：手动快门逐页拍、可开补光，天然不会因来不及翻页重复拍同一张；检查页仍做 dHash 去重与一键恢复 |
 | 找边 / 透视矫正 | Vision 文档分割 + 几何兜底 | 纯几何找边（Otsu + 亮段拟合 + 最小二乘 + 单应性逆映射）；找不到可靠纸边就用原图，绝不猜测式裁剪 |
 | OCR 文字稿 | 系统 Vision，离线零体积 | 默认完全离线；在「关于 → OCR 服务」填自己部署的 Xiaomi-OCR-0 地址后，按官方协议生成 Markdown 文字稿并用首页标题自动命名 |
 | PDF 合并 | PDFKit 原样插入页面 | `PdfRenderer` 按 200dpi 逐页重绘后拼接，顺序 / 横竖 / 双面补空白一致；纯矢量文字稿会变成图像页 |
 | 清理引擎 | `engine/Core.swift`（Swift） | `GrayMath.java` 逐行等价移植 + `PdfWrite.java` 手写灰度 Flate 图像 XObject；`android/test/run_test.sh` 可在 Mac 上跑 JVM 回归测试 |
 
 其余完全一致：白场归一 → 去透印 → 自适应 gamma → 单向锐化 → 裁边 → 横竖 A4 → 笔画保留率闸门。拍照件也必须走完这条链路，绝不绕过。
+
+**关于「当前设备没有可用的相机」**：早期 build 10 用 `MediaStore.ACTION_IMAGE_CAPTURE` 拉起系统相机 App，在 Android 11+ 上会同时踩两个坑——Manifest 没有 `<queries>` 声明导致包可见性过滤后解析不到相机 App，以及声明了 `CAMERA` 权限却没动态申请导致相机 App 拒绝——于是明明有摄像头的手机也会弹这句误报。build 11 起改为 **App 内置相机**（`CameraActivity.java`：Camera2 + `TextureView` 预览 + `ImageReader` 出片，动态申请 `CAMERA` 权限、方向与限长边自己归一，不依赖设备写不写 EXIF），不再依赖任何外部相机 App；Manifest 补上 `<queries>` 作为系统相机兜底。真正没有相机硬件的设备（模拟器 / 部分平板 / 云手机）会隐藏「拍照扫描」入口并直接转相册，权限被拒绝或相机被占用时也会分别提示原因、给出「从相册选 / 用系统相机」两条退路。
 
 ### 进阶：小米开源的 Xiaomi-OCR-0
 
@@ -239,7 +241,7 @@ cd android
 ./test/run_test.sh    # 纯 JVM 回归测试：引擎 + PDF 写出，不需要模拟器
 ```
 
-> 只需 Android SDK 的 `build-tools` 与任一 `platforms/android-3x/android.jar`，**不需要 Gradle / AndroidX / Maven / 联网**。全部 UI 用原生 View 自绘，扫描引擎是 `GrayMath.java`，PDF 由 `PdfWrite.java` 直接写灰度 Flate 图像 XObject，合并用系统 `PdfRenderer`。签名用本机生成的自签 keystore（v1 + v2 + v3）。
+> 只需 Android SDK 的 `build-tools` 与任一 `platforms/android-3x/android.jar`，**不需要 Gradle / AndroidX / Maven / 联网**。全部 UI 用原生 View 自绘，扫描引擎是 `GrayMath.java`，PDF 由 `PdfWrite.java` 直接写灰度 Flate 图像 XObject，合并用系统 `PdfRenderer`。签名用本机生成的自签 keystore（v1 + v2 + v3）。相机由 `CameraActivity.java` 用系统 Camera2 API 自己实现，没有引入任何相机 SDK 或 so。
 
 ## 🐍 Python 参考引擎（可选）
 
@@ -273,7 +275,7 @@ python ocr_xiaomi.py 某试卷.pdf   # 输出 <名字>-OCR.md
 |---|---|---|---|
 | v1.5.0 | macOS | `ClearPaper-macOS-1.5.0.dmg` | 新 Logo + 品牌更名 ClearPaper；侧边栏 UI |
 | v1.5.0 | iOS | `ClearPaper-iOS-1.5.0-unsigned.ipa` | build 10：只用系统文档相机，新增拍完「检查拍摄页」（删页 / 旋转 / 调序 / 重复页剔除与一键恢复）、裁边失败页自动标记并补矫正、图像方向与尺寸归一；彻底移除实验性自研相机；拍照件仍强制走完整 ScanCore 清理流程；四页 UI、by jpruby 与真实版本信息、本机 OCR 文字稿、多份合并、文件管理、外观设置；可选 Xiaomi-OCR-0 后端 |
-| v1.5.0 | Android | `ClearPaper-Android-1.5.0.apk` | 首个 Android 版：四页 UI 与 iOS 对齐、暖灰配色 / Logo / `by jpruby` / 版本 1.5.0 (10)；拍照 + 检查拍摄页 + 几何找边矫正 + 重复页剔除与恢复、完整清理引擎、三种合并、文件管理、预览 / 打印 / 分享 / 存文件、外观设置；可选 Xiaomi-OCR-0 桥接，默认完全离线 |
+| v1.5.0 | Android | `ClearPaper-Android-1.5.0.apk` | 首个 Android 版：四页 UI 与 iOS 对齐、暖灰配色 / Logo / `by jpruby` / 版本 1.5.0 (10)；拍照 + 检查拍摄页 + 几何找边矫正 + 重复页剔除与恢复、完整清理引擎、三种合并、文件管理、预览 / 打印 / 分享 / 存文件、外观设置；可选 Xiaomi-OCR-0 桥接，默认完全离线；**build 11** 改为 App 内置相机，修复「当前设备没有可用的相机」误报，并让无相机设备完整走相册 |
 | v1.2.0 | Windows | `ClearPaper-Windows-portable.zip` | 品牌更名 ClearPaper；免安装便携包，拖拽即用 |
 
 > Android APK 为自签名发布包，安装时系统会提示「未知来源」，允许一次即可；不依赖 Google Play 服务，也不需要 Google 账号。

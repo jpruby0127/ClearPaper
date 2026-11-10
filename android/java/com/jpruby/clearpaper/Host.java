@@ -8,6 +8,7 @@ public interface Host {
     void refresh();
     void gotoTab(int tab);
     void pickPdf();
+    boolean hasCamera();
     void startCamera();
     void pickImages();
     void preview(File f);

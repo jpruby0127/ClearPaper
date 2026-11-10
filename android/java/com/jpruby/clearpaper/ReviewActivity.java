@@ -5,8 +5,11 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.view.Gravity;
@@ -23,6 +26,8 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
@@ -37,7 +42,9 @@ import java.util.Locale;
  * 对应 iOS 的 ScanReviewView。原图逐页落盘，网格只持有缩略图。
  */
 public final class ReviewActivity extends Activity {
-    private static final int REQ_CAMERA = 11;
+    private static final int REQ_CAMERA = 11;        // App 内置相机
+    private static final int REQ_SYSTEM_CAMERA = 12; // 兜底：系统相机 App
+    private static final int REQ_IMAGES = 13;       // 无相机设备 / 用户主动选相册
 
     private final class Page {
         final File file;
@@ -302,44 +309,158 @@ public final class ReviewActivity extends Activity {
         d.show();
     }
 
+    /** 优先用 App 内置相机：不需要外部相机 App，也就不会踩 Android 11+ 包可见性的坑。 */
     private void startCamera() {
+        if (!CameraActivity.hasCamera(ReviewActivity.this)) { showNoCamera(); return; }
+        Intent i = new Intent(ReviewActivity.this, CameraActivity.class);
+        i.putExtra(CameraActivity.EXTRA_DIR, dir.getAbsolutePath());
+        startActivityForResult(i, REQ_CAMERA);
+    }
+
+    private void showNoCamera() {
+        new AlertDialog.Builder(ReviewActivity.this)
+                .setTitle("这台设备没有可用的相机")
+                .setMessage("可以直接从相册选已有的试卷照片，一样会做找边矫正并走完整清理流程，功能不打折。")
+                .setPositiveButton("从相册选", (d, w) -> pickImages())
+                .setNegativeButton("取消", null).show();
+    }
+
+    /** 内置相机失败时给出准确原因，而不是笼统一句「没有可用的相机」。 */
+    private void showCameraProblem(String reason) {
+        boolean noCamera = CameraActivity.REASON_NO_CAMERA.equals(reason);
+        boolean denied = CameraActivity.REASON_DENIED.equals(reason);
+        String title = noCamera ? "这台设备没有可用的相机"
+                : denied ? "相机权限被拒绝" : "相机暂时打不开";
+        String body = noCamera
+                ? "没有检测到相机硬件。可以直接从相册选已有的试卷照片，一样会做找边矫正并走完整清理流程。"
+                : denied
+                ? "在系统「设置 → 应用 → ClearPaper → 权限」里允许相机后即可拍摄；也可以先用相册里的照片，功能完全一样。"
+                : "相机可能被其他应用占用，或这台设备的相机驱动不兼容。可以稍后重试、改用系统相机拍，或直接从相册选已有照片。";
+        AlertDialog.Builder b = new AlertDialog.Builder(ReviewActivity.this)
+                .setTitle(title).setMessage(body)
+                .setPositiveButton("从相册选", (d, w) -> pickImages())
+                .setNegativeButton("稍后再说", null);
+        if (!noCamera && !denied) b.setNeutralButton("用系统相机", (d, w) -> startSystemCamera());
+        b.show();
+    }
+
+    /** 最后一道兜底：Manifest 里已补 queries，且显式把 URI 权限授予解析到的相机 App。 */
+    private void startSystemCamera() {
         pendingCamera = new File(dir, "camera-" + System.currentTimeMillis() + ".jpg");
         Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-        android.net.Uri u = ShareProvider.uriFor(pendingCamera);
+        Uri u = ShareProvider.uriFor(pendingCamera);
         i.putExtra(MediaStore.EXTRA_OUTPUT, u);
         i.setClipData(ClipData.newUri(getContentResolver(), "capture", u));
         i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        try { startActivityForResult(i, REQ_CAMERA); }
-        catch (Exception e) {
+        try {
+            java.util.List<ResolveInfo> targets = getPackageManager()
+                    .queryIntentActivities(i, PackageManager.MATCH_DEFAULT_ONLY);
+            for (ResolveInfo r : targets) {
+                grantUriPermission(r.activityInfo.packageName, u,
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            }
+            if (targets.isEmpty()) throw new IllegalStateException("no camera app");
+            startActivityForResult(i, REQ_SYSTEM_CAMERA);
+        } catch (Exception e) {
+            pendingCamera.delete();
             pendingCamera = null;
-            new AlertDialog.Builder(this).setTitle("当前设备没有可用的相机")
-                    .setMessage("可以返回「处理」页用「从相册选」导入已有照片，一样会走完整清理流程。")
-                    .setPositiveButton("好", null).show();
+            showNoCamera();
         }
     }
 
-    @Override protected void onActivityResult(int request, int result, Intent data) {
-        super.onActivityResult(request, result, data);
-        if (request != REQ_CAMERA) return;
-        if (result != RESULT_OK || pendingCamera == null || !pendingCamera.exists()
-                || pendingCamera.length() < 1024) {
-            if (pendingCamera != null) pendingCamera.delete();
-            return;
-        }
-        File raw = pendingCamera;
-        pendingCamera = null;
+    private void pickImages() {
+        Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("image/*");
+        i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try { startActivityForResult(i, REQ_IMAGES); }
+        catch (Exception e) { Toast.makeText(this, "找不到相册", Toast.LENGTH_SHORT).show(); }
+    }
+
+    private File nextPageFile() {
         int n = 0;
         File dst;
         do { dst = new File(dir, String.format(Locale.US, "page-%03d.jpg", n++)); }
         while (dst.exists());
+        return dst;
+    }
+
+    /** 原始拍摄帧 → 方向归一 + 限长边 → 检查页的一页；原帧用完即删。 */
+    private void importShot(File raw) {
+        if (raw == null || !raw.exists() || raw.length() < 1024) { if (raw != null) raw.delete(); return; }
+        File dst = nextPageFile();
         if (!Capture.normalize(raw, dst)) {
-            Toast.makeText(ReviewActivity.this, "照片读取失败", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "照片读取失败", Toast.LENGTH_SHORT).show();
             raw.delete();
             return;
         }
-        raw.delete();
-        recomputeSignatures();
+        if (!raw.equals(dst)) raw.delete();
         addPage(dst, true);
+    }
+
+    private boolean copyUri(Uri u, File dst) {
+        try (InputStream in = getContentResolver().openInputStream(u);
+             OutputStream out = new FileOutputStream(dst)) {
+            if (in == null) return false;
+            byte[] buf = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            return true;
+        } catch (Exception e) { return false; }
+    }
+
+    private List<Uri> uris(Intent data) {
+        List<Uri> out = new ArrayList<>();
+        if (data == null) return out;
+        ClipData clip = data.getClipData();
+        if (clip != null) {
+            for (int i = 0; i < clip.getItemCount(); i++) {
+                Uri u = clip.getItemAt(i).getUri();
+                if (u != null) out.add(u);
+            }
+        } else if (data.getData() != null) out.add(data.getData());
+        return out;
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request == REQ_CAMERA) {
+            if (result == RESULT_OK && data != null) {
+                ArrayList<String> paths = data.getStringArrayListExtra(CameraActivity.EXTRA_PATHS);
+                if (paths != null && !paths.isEmpty()) {
+                    recomputeSignatures();
+                    for (String p : paths) importShot(new File(p));
+                    return;
+                }
+            } else if (data != null) {
+                String reason = data.getStringExtra(CameraActivity.EXTRA_REASON);
+                if (reason != null) { showCameraProblem(reason); return; }
+            }
+        } else if (request == REQ_SYSTEM_CAMERA) {
+            if (result == RESULT_OK && pendingCamera != null && pendingCamera.exists()
+                    && pendingCamera.length() >= 1024) {
+                File raw = pendingCamera;
+                pendingCamera = null;
+                recomputeSignatures();
+                importShot(raw);
+            } else if (pendingCamera != null) {
+                pendingCamera.delete();
+                pendingCamera = null;
+            }
+        } else if (request == REQ_IMAGES) {
+            if (result != RESULT_OK) return;
+            List<Uri> picked = uris(data);
+            if (picked.isEmpty()) return;
+            recomputeSignatures();
+            int n = 0;
+            for (Uri u : picked) {
+                File raw = new File(dir, "pick-" + System.currentTimeMillis() + "-" + n++ + ".jpg");
+                if (!copyUri(u, raw)) { raw.delete(); continue; }
+                importShot(raw);
+            }
+            if (pages.isEmpty()) Toast.makeText(this, "图片读取失败", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void confirm() {

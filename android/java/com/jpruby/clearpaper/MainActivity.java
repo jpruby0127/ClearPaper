@@ -165,7 +165,15 @@ public final class MainActivity extends Activity implements Host {
         catch (Exception e) { toast("找不到相册"); }
     }
 
+    @Override public boolean hasCamera() { return CameraActivity.hasCamera(this); }
+
     @Override public void startCamera() {
+        // 没有相机硬件的设备别让用户白进一个空检查页，直接给完整可用的相册路径
+        if (!hasCamera()) {
+            toast("这台设备没有可用相机，已为你打开相册");
+            pickImages();
+            return;
+        }
         File dir = new File(new File(getFilesDir(), "ClearPaper/Review"),
                 UUID.randomUUID().toString());
         dir.mkdirs();
