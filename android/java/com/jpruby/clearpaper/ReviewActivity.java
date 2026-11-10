@@ -327,6 +327,7 @@ public final class ReviewActivity extends Activity {
 
     /** 内置相机失败时给出准确原因，而不是笼统一句「没有可用的相机」。 */
     private void showCameraProblem(String reason) {
+        if (CameraActivity.REASON_SYSTEM_CAMERA.equals(reason)) { startSystemCamera(); return; }
         boolean noCamera = CameraActivity.REASON_NO_CAMERA.equals(reason);
         boolean denied = CameraActivity.REASON_DENIED.equals(reason);
         String title = noCamera ? "这台设备没有可用的相机"
@@ -434,6 +435,12 @@ public final class ReviewActivity extends Activity {
                     return;
                 }
             } else if (data != null) {
+                // 相机页中途退出（失败 / 改用系统相机）时，已拍的页照常收下，不白拍
+                ArrayList<String> kept = data.getStringArrayListExtra(CameraActivity.EXTRA_PATHS);
+                if (kept != null && !kept.isEmpty()) {
+                    recomputeSignatures();
+                    for (String p : kept) importShot(new File(p));
+                }
                 String reason = data.getStringExtra(CameraActivity.EXTRA_REASON);
                 if (reason != null) { showCameraProblem(reason); return; }
             }

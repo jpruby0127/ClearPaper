@@ -28,14 +28,25 @@ public final class Capture {
 
     /** 统一 EXIF 方向 + 限长边 2600px，写回 JPEG。下游不需要再猜方向。 */
     public static boolean normalize(File src, File dst) {
-        Bitmap bm = decode(src);
+        // 相机直出的 JPEG 可能有 3000~4000px 长边，先按 inSampleSize 粗采样再解码，
+        // 避免整张 48MB ARGB_8888 位图直接进内存（后面还会再缩到 2600）。
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(src.getPath(), bounds);
+        int side = Math.max(bounds.outWidth, bounds.outHeight);
+        int sample = 1;
+        while (side / sample > 3200) sample *= 2;
+        BitmapFactory.Options o = new BitmapFactory.Options();
+        o.inSampleSize = sample;
+        o.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        Bitmap bm = BitmapFactory.decodeFile(src.getPath(), o);
         if (bm == null) return false;
         Bitmap cur = upright(bm, exifDegrees(src));
         if (cur != bm) bm.recycle();
         try {
-            int side = Math.max(cur.getWidth(), cur.getHeight());
-            if (side > MAX_SIDE) {
-                float k = (float) MAX_SIDE / side;
+            int curSide = Math.max(cur.getWidth(), cur.getHeight());
+            if (curSide > MAX_SIDE) {
+                float k = (float) MAX_SIDE / curSide;
                 Bitmap small = Bitmap.createScaledBitmap(cur,
                         Math.max(1, Math.round(cur.getWidth() * k)),
                         Math.max(1, Math.round(cur.getHeight() * k)), true);

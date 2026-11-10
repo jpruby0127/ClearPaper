@@ -5,8 +5,6 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
@@ -37,10 +35,10 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 
 /**
  * App 内置文档相机（Camera2），不依赖任何外部相机 App。
@@ -61,15 +59,16 @@ public final class CameraActivity extends Activity {
     public static final String REASON_NO_CAMERA = "no_camera";
     public static final String REASON_DENIED = "denied";
     public static final String REASON_BUSY = "busy";
+    public static final String REASON_SYSTEM_CAMERA = "system_camera";
 
     private static final int REQ_PERMISSION = 7;
-    private static final int MAX_SIDE = 3000;      // 单页解码上限，Capture.normalize 还会再收到 2600
     private static final int PREVIEW_MAX = 1920;
+    private static final String PREF_CAM_ROT = "cp.camera.rotation";
 
     private File dir;
     private final ArrayList<String> shots = new ArrayList<>();
     private TextureView preview;
-    private TextView counter, done, flashBtn, tip;
+    private TextView counter, done, flashBtn, tip, rotateBtn;
     private View shutter;
 
     private String cameraId;
@@ -79,7 +78,8 @@ public final class CameraActivity extends Activity {
     private CaptureRequest.Builder previewBuilder;
     private Size previewSize, jpegSize;
     private boolean flashAvailable = false, autoFlashAvailable = false;
-    private int sensorOrientation = 90, rotationDeg = 90;
+    private int sensorOrientation = 90;
+    private int userRotation = 0;   // 用户手动校正的预览方向，持久保存
 
     private HandlerThread camThread, imageThread;
     private Handler camHandler, imageHandler;
@@ -107,6 +107,8 @@ public final class CameraActivity extends Activity {
         dir = new File(p != null ? p
                 : new File(getFilesDir(), "ClearPaper/Review/" + java.util.UUID.randomUUID()).getPath());
         dir.mkdirs();
+        userRotation = getSharedPreferences("clearpaper", MODE_PRIVATE)
+                .getInt(PREF_CAM_ROT, 0) % 360;
 
         buildUi();
         if (!hasCamera(this)) { fail(REASON_NO_CAMERA); return; }
@@ -150,6 +152,10 @@ public final class CameraActivity extends Activity {
         TextView title = Ui.text(this, "拍照扫描", 15, 0xFFFFFFFF, true);
         title.setGravity(Gravity.CENTER);
         top.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        rotateBtn = Ui.text(this, "画面 " + userRotation + "°", 12, 0xFFFFFFFF, true);
+        rotateBtn.setPadding(Ui.dp(this, 10), 0, Ui.dp(this, 10), 0);
+        rotateBtn.setOnClickListener(v -> rotateView());
+        top.addView(rotateBtn);
         flashBtn = Ui.text(this, "补光 关", 12, 0xFFFFFFFF, true);
         flashBtn.setVisibility(View.INVISIBLE);
         flashBtn.setOnClickListener(v -> toggleFlash());
@@ -205,6 +211,11 @@ public final class CameraActivity extends Activity {
                 10, 0xFFB8B8BC, false);
         note.setGravity(Gravity.CENTER);
         bottom.addView(note);
+        TextView sys = Ui.text(this, "画面仍不对？改用系统相机拍", 11, 0xFF9AC0FF, true);
+        sys.setGravity(Gravity.CENTER);
+        sys.setPadding(0, Ui.dp(this, 10), 0, 0);
+        sys.setOnClickListener(v -> useSystemCamera());
+        bottom.addView(sys);
         root.addView(bottom, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
 
@@ -268,7 +279,6 @@ public final class CameraActivity extends Activity {
             CameraCharacteristics cc = mgr.getCameraCharacteristics(cameraId);
             Integer so = cc.get(CameraCharacteristics.SENSOR_ORIENTATION);
             sensorOrientation = so != null ? so : 90;
-            rotationDeg = (sensorOrientation - displayDegrees() + 360) % 360;
             Boolean hasFlash = cc.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
             flashAvailable = Boolean.TRUE.equals(hasFlash);
             int[] aeModes = cc.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_MODES);
@@ -283,7 +293,9 @@ public final class CameraActivity extends Activity {
             StreamConfigurationMap map = cc.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             if (map == null) { fail(REASON_BUSY); return; }
             jpegSize = chooseJpegSize(map.getOutputSizes(ImageFormat.JPEG));
-            previewSize = choosePreviewSize(map.getOutputSizes(SurfaceTexture.class));
+            android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+            previewSize = choosePreviewSize(map.getOutputSizes(SurfaceTexture.class),
+                    dm.widthPixels, dm.heightPixels);
             if (jpegSize == null || previewSize == null) { fail(REASON_BUSY); return; }
 
             reader = ImageReader.newInstance(jpegSize.getWidth(), jpegSize.getHeight(),
@@ -318,7 +330,7 @@ public final class CameraActivity extends Activity {
         Size best = null; long bestArea = -1;
         for (Size s : sizes) {
             long side = Math.max(s.getWidth(), s.getHeight());
-            if (side > 4200) continue;                  // 避免超大 JPEG 把内存打爆
+            if (side > 3200) continue;                  // 交给 Capture.normalize 时不会占太多内存
             long area = (long) s.getWidth() * s.getHeight();
             if (area > bestArea) { bestArea = area; best = s; }
         }
@@ -330,45 +342,66 @@ public final class CameraActivity extends Activity {
         return best;
     }
 
-    private static Size choosePreviewSize(Size[] sizes) {
+    /** 选与竖屏取景框比例最接近的预览尺寸，避免画面被横向压扁或拉伸。 */
+    private static Size choosePreviewSize(Size[] sizes, int vw, int vh) {
         if (sizes == null || sizes.length == 0) return null;
-        ArrayList<Size> ok = new ArrayList<>();
+        float target = (float) Math.min(vw, vh) / Math.max(Math.max(vw, vh), 1);
+        Size best = null; float bestScore = -1e9f;
         for (Size s : sizes) {
             long side = Math.max(s.getWidth(), s.getHeight());
-            if (side <= PREVIEW_MAX) ok.add(s);
+            if (side > PREVIEW_MAX) continue;
+            float ratio = (float) Math.min(s.getWidth(), s.getHeight()) / side;
+            float score = -Math.abs(ratio - target) * 10f + (float) side / PREVIEW_MAX;
+            if (score > bestScore) { bestScore = score; best = s; }
         }
-        if (ok.isEmpty()) ok.addAll(Arrays.asList(sizes));
-        ok.sort(Comparator.comparingLong((Size s) -> (long) s.getWidth() * s.getHeight()).reversed());
-        return ok.get(0);
+        if (best == null) {
+            best = sizes[0];
+            for (Size s : sizes) if ((long) s.getWidth() * s.getHeight()
+                    < (long) best.getWidth() * best.getHeight()) best = s;
+        }
+        return best;
     }
 
     /**
-     * 把横向的 sensor 画面转正并按 center-crop 铺满取景框，避免预览被压扁。
-     * TextureView 的 transform 作用在纹理坐标系里，所以旋转、缩放都以纹理中心为锚点，
-     * 最后把纹理中心平移到 view 中心。
+     * 默认 identity：Camera2 的预览方向由系统按 sensor / display 方向自行处理，
+     * TextureView 会把它正确转正。build 11 在这里额外叠加了「旋转 90° + center-crop 放大」，
+     * 等于把已经转正的画面再转一次、再放大裁一次，才出现「放大且反转」。
+     *
+     * 用户手动校正时只做纯旋转 + 等比缩小（完整容纳，绝不放大裁切）。
      */
     private void configureTransform(int vw, int vh) {
-        if (preview == null || previewSize == null || vw <= 0 || vh <= 0) return;
+        if (preview == null || vw <= 0 || vh <= 0) return;
         try {
-            int rot = ((rotationDeg + 45) / 90) % 4 * 90;
-            float W = previewSize.getWidth(), H = previewSize.getHeight();
-            float outW = (rot % 180 == 0) ? W : H;
-            float outH = (rot % 180 == 0) ? H : W;
-            float scale = Math.max(vw / outW, vh / outH);
             Matrix m = new Matrix();
-            m.postRotate(rot, W / 2f, H / 2f);
-            m.postScale(scale, scale, W / 2f, H / 2f);
-            m.postTranslate(vw / 2f - W / 2f, vh / 2f - H / 2f);
+            if (userRotation != 0) {
+                float r = (float) Math.toRadians(userRotation);
+                float c = Math.abs((float) Math.cos(r)), s = Math.abs((float) Math.sin(r));
+                float outerW = vw * c + vh * s;
+                float outerH = vw * s + vh * c;
+                float fit = Math.min(vw / outerW, vh / outerH);
+                m.postRotate(userRotation, vw / 2f, vh / 2f);
+                m.postScale(fit, fit, vw / 2f, vh / 2f);
+            }
             preview.setTransform(m);
         } catch (Exception ignored) {}
     }
 
-    private int displayDegrees() {
+    private void rotateView() {
+        userRotation = (userRotation + 90) % 360;
+        getSharedPreferences("clearpaper", MODE_PRIVATE).edit()
+                .putInt(PREF_CAM_ROT, userRotation).apply();
+        rotateBtn.setText("画面 " + userRotation + "°");
+        configureTransform(preview.getWidth(), preview.getHeight());
+        toast("画面已转到 " + userRotation + "°，拍照方向会一起调整");
+    }
+
+    /** Camera2Basic 的标准公式：让设备把 JPEG 方向写进 EXIF / 物理转正。 */
+    private int jpegOrientation() {
         int r = getWindowManager().getDefaultDisplay().getRotation();
-        if (r == Surface.ROTATION_90) return 90;
-        if (r == Surface.ROTATION_180) return 180;
-        if (r == Surface.ROTATION_270) return 270;
-        return 0;
+        int idx = r == Surface.ROTATION_90 ? 1 : r == Surface.ROTATION_180 ? 2
+                : r == Surface.ROTATION_270 ? 3 : 0;
+        int[] ORIENT = {90, 0, 270, 180};
+        return (ORIENT[idx] + sensorOrientation + 270 + userRotation) % 360;
     }
 
     private final CameraDevice.StateCallback stateCallback = new CameraDevice.StateCallback() {
@@ -466,8 +499,9 @@ public final class CameraActivity extends Activity {
             b.addTarget(reader.getSurface());
             b.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
             applyFlash(b);
-            // 方向由 writeRotated 自己处理，不依赖设备写不写 EXIF，也不需要 JPEG_ORIENTATION
-            b.set(CaptureRequest.JPEG_ORIENTATION, 0);
+            // 方向交给设备：JPEG_ORIENTATION 会写成 EXIF 或由 HAL 物理转正，
+            // 再由 Capture.normalize 统一归正，不再自己猜角度、也就不会二次旋转
+            b.set(CaptureRequest.JPEG_ORIENTATION, jpegOrientation());
             session.stopRepeating();
             session.capture(b.build(), new CameraCaptureSession.CaptureCallback() {
                 @Override public void onCaptureCompleted(CameraCaptureSession s, CaptureRequest r,
@@ -511,7 +545,7 @@ public final class CameraActivity extends Activity {
             img = null;
 
             File out = new File(dir, "shot-" + System.currentTimeMillis() + ".jpg");
-            final boolean ok = writeRotated(bytes, out, rotationDeg);
+            final boolean ok = writeJpeg(bytes, out);
             final String path = out.getAbsolutePath();
             if (!ok) out.delete();
             runOnUiThread(() -> {
@@ -535,32 +569,19 @@ public final class CameraActivity extends Activity {
         }
     }
 
-    /** 解码 JPEG → 按设备方向转正 → 限长边 → 重新压缩。不依赖 EXIF，所见即所得。 */
-    private static boolean writeRotated(byte[] bytes, File out, int deg) {
-        BitmapFactory.Options bounds = new BitmapFactory.Options();
-        bounds.inJustDecodeBounds = true;
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false;
-        int sample = 1;
-        while (Math.max(bounds.outWidth, bounds.outHeight) / sample > MAX_SIDE) sample *= 2;
-        BitmapFactory.Options o = new BitmapFactory.Options();
-        o.inSampleSize = sample;
-        o.inPreferredConfig = Bitmap.Config.ARGB_8888;
-        Bitmap bm = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, o);
-        if (bm == null) return false;
-        Bitmap rotated = Capture.rotated(bm, deg);
-        if (rotated != bm) bm.recycle();
-        boolean ok = Capture.save(rotated, out, 92);
-        rotated.recycle();
-        if (!ok) return false;
-        // 像素已经转正，必须把设备可能写下的 EXIF 方向清掉，否则 Capture.normalize 会再转一次
-        try {
-            android.media.ExifInterface exif = new android.media.ExifInterface(out.getPath());
-            exif.setAttribute(android.media.ExifInterface.TAG_ORIENTATION,
-                    String.valueOf(android.media.ExifInterface.ORIENTATION_NORMAL));
-            exif.saveAttributes();
-        } catch (Exception ignored) {}
-        return true;
+    /**
+     * 原样落盘相机输出的 JPEG，保留设备写好的 EXIF 方向。
+     * 方向归正、EXIF 读取、限长边都由下游 Capture.normalize 一次做完，
+     * 这里不解码、不旋转、不重压缩，也就不会再出现方向被转两次的问题。
+     */
+    private static boolean writeJpeg(byte[] bytes, File out) {
+        try (FileOutputStream fos = new FileOutputStream(out)) {
+            fos.write(bytes);
+            fos.flush();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void updateCount() {
@@ -638,9 +659,21 @@ public final class CameraActivity extends Activity {
         runOnUiThread(() -> {
             Intent i = new Intent();
             i.putExtra(EXTRA_REASON, reason);
+            i.putStringArrayListExtra(EXTRA_PATHS, new ArrayList<>(shots));
             setResult(RESULT_CANCELED, i);
             finish();
         });
+    }
+
+    /** 切到系统相机：已拍的页先回传，别让用户白拍。 */
+    private void useSystemCamera() {
+        if (failed) return;
+        failed = true;
+        Intent i = new Intent();
+        i.putExtra(EXTRA_REASON, REASON_SYSTEM_CAMERA);
+        i.putStringArrayListExtra(EXTRA_PATHS, new ArrayList<>(shots));
+        setResult(RESULT_CANCELED, i);
+        finish();
     }
 
     @Override public void onBackPressed() { cancel(); }
