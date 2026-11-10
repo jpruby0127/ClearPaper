@@ -40,9 +40,12 @@ fi
 swiftc -parse-as-library -O -disable-sandbox \
   -target arm64-apple-ios16.0-simulator -sdk "$SDK" \
   -framework SwiftUI -framework UIKit -framework PDFKit -framework ImageIO \
-  -o "$STAGE/ClearPaper" "$TOOLS/engine/Core.swift" "$TOOLS/ios/App.swift"
+  -framework Vision -framework VisionKit -framework PhotosUI \
+  -o "$STAGE/ClearPaper" "$TOOLS/engine/Core.swift" "$TOOLS/engine/Merge.swift" \
+     "$TOOLS/ios/Capture.swift" "$TOOLS/ios/App.swift"
 
 cp "$TOOLS/ios/sim_info.plist" "$STAGE/Info.plist"
+cp "$TOOLS/ios/Logo.png" "$STAGE/Logo.png"
 echo -n "APPL????" > "$STAGE/PkgInfo"
 /usr/bin/plutil -lint "$STAGE/Info.plist" >/dev/null
 
@@ -50,7 +53,8 @@ xcrun simctl install "$BOOTED" "$STAGE"
 xcrun simctl launch "$BOOTED" com.jpruby.clearpaper.ios >/dev/null
 echo "已安装并启动模拟器：$BOOTED  (com.jpruby.clearpaper.ios)"
 if [ -n "$SHOT" ]; then
-  sleep 2
+  # SwiftUI 首帧在冷启动时可能要 3~5 秒，太早截图只会拿到白色启动画面。
+  sleep 6
   xcrun simctl io "$BOOTED" screenshot "$SHOT"
   echo "界面截图：$SHOT"
 fi

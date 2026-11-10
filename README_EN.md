@@ -61,10 +61,12 @@ Show-through from the back of the sheet (the most common double-sided scan artif
   <br><sub>Same page, same area: top = before (ghost text visible), bottom = after</sub>
 </p>
 
-Result card on iPhone (fully on-device: import PDF → process → print / share / save):
+The iOS app has four tabs (fully on-device: import / scan → process → merge / print / share / save):
 
 <p align="center">
-  <img src="docs/screenshots/ios-result.png" width="300" alt="iOS result">
+  <img src="docs/screenshots/ios-ui.png" width="290" alt="iOS process tab">
+  <img src="docs/screenshots/ios-about.png" width="290" alt="iOS about tab">
+  <br><sub>Left: process tab (scan, show-through toggle, job cards) · Right: about tab (by jpruby · v1.5.0 (7))</sub>
 </p>
 
 ## 🚀 Quick start (no build)
@@ -89,6 +91,15 @@ The app bundles its own engine — **no Python, venv, or config needed** on the 
 4. In WeChat, open a paper → "Open in another app" → choose **ClearPaper**; or tap "导入试卷 PDF" in the app.
 
 > Free personal signatures last **7 days**; re-sign once when expired. Files stay on the device.
+
+**What's in the iOS app (1.5.0 / build 7)**
+
+- Four tabs: **Process / Merge / Files / About**, warm-grey palette that follows (or can override) the system appearance.
+- **About**: logo, **by jpruby**, real version + build read from `Info.plist`, repo link.
+- **Process**: import PDFs, scan with the camera, pick from the photo library; show-through and auto-start toggles; job cards with pages / sheet width / stroke retention / show-through / elapsed time, plus preview, print, share, save, retry and delete.
+- **Merge**: full / duplex-safe (blank page after each document) / keep separate, reorderable, sharing `engine/Merge.swift` with macOS.
+- **Files**: output PDFs and OCR transcripts in one list — preview, print, share, copy, add to merge, delete.
+- **Scan + OCR**: see the section below.
 
 ### Windows · portable, no install
 
@@ -121,6 +132,32 @@ Gamma is not hard-coded: it steps up until real strokes are genuinely black (str
 
 Two hard-won fixes are already in: flat-field correction switched from additive to **multiplicative white-point normalization** (faint strokes no longer pushed to white); unsharp mask replaced by **darken-only sharpening** (stroke loss dropped from 7.9% to 0–1%).
 
+## 📷 Scan + OCR: shoot, then organize
+
+On iOS you can also capture pages directly:
+
+1. **Document camera** (`VisionKit`): multi-page shooting with automatic edge detection and perspective correction; or pick several photos at once.
+2. **Same cleanup pipeline**: photos are composed into a PDF, then passed through the very same ScanCore (crop / de-ghost / portrait-or-landscape A4 / quality gate) as imported PDFs.
+3. **On-device OCR**: system `Vision` recognizes Chinese and English offline with zero extra payload, exports `<title>-文字.txt`, and **auto-names the output** from the most title-like line on page 1. The transcript can be viewed, selected, copied and shared in the app.
+
+> The PDF itself stays image-only — no text layer is overlaid, so print quality and the stroke-retention gate are untouched.
+
+### Advanced: Xiaomi's open-source Xiaomi-OCR-0
+
+[Xiaomi-OCR-0](https://github.com/xiaomi-research/Xiaomi-OCR-0) (0.8B, Apache 2.0, released 2026-10-30) parses a whole page into **structured Markdown** (OTSL tables, LaTeX formulas), extracts fields as JSON and answers questions about a document. `python/ocr_xiaomi.py` is a lightweight bridge that calls a **local** OpenAI-compatible server using the official `DOC_PROMPT` and request shape:
+
+```bash
+vllm serve SeerRay-Lab/Xiaomi-OCR-0 --host 127.0.0.1 --port 8000 --max-model-len 16384
+
+cd python
+python ocr_xiaomi.py some-paper.pdf                  # → some-paper-OCR.md
+python ocr_xiaomi.py form.png --task kie --fields "name,id,total"
+```
+
+Only `127.0.0.1 / localhost` is accepted — **documents never leave the machine**. `XIAOMI_OCR_LOCAL_URL` / `XIAOMI_OCR_MODEL` match the official demo. SGLang and the community Ollama BF16 GGUF work too.
+
+**Why the model isn't bundled into the IPA**: 0.8B Qwen3.5 multimodal weights are ~1.8 GB and need a Core ML / GGUF conversion plus a dedicated runtime — that would inflate the 450 KB IPA by three orders of magnitude and slow down launch. So iPhone uses system Vision for instant offline recognition, while Xiaomi-OCR-0 handles structured parsing on desktop / server. Both outputs (`.txt` / `.md`) are viewable in the Files tab. For best parsing quality, use Xiaomi's official Demo / MCP service (layout analysis + post-processing included).
+
 ## 🛠 Build from source
 
 Clone and build either app — **no third-party dependencies** (Swift stdlib + system frameworks only).
@@ -152,7 +189,7 @@ Run it in the simulator:
 ./build_sim.sh shot.png        # build, install, launch, optional screenshot
 ```
 
-> Needs Xcode command-line tools + iOS SDK (`xcode-select --install`). Icons are committed, so the build needs no Python.
+> Needs Xcode command-line tools + iOS SDK (`xcode-select --install`). Icons and `ios/Logo.png` are committed; `Core.swift` (engine), `Merge.swift` (merge) and `Capture.swift` (scan + OCR) compile straight from source against system frameworks only — no Python, no third-party libraries.
 
 ## 🐍 Python reference engine (optional)
 
@@ -163,14 +200,17 @@ cd python
 pip install -r requirements.txt
 ./bin/scanpdf some-paper.pdf     # outputs <name>-清晰版.pdf
 ./bin/scanpdf --check
+# optional: structured Markdown via a local Xiaomi-OCR-0 server (see above)
+python ocr_xiaomi.py some-paper.pdf
 ```
 
 ## 🗺 Roadmap
 
-- [ ] Multi-page stitching / duplex paper merge
+- [x] Multi-page stitching / duplex paper merge (macOS 1.3 / iOS 1.5)
+- [x] Document scanning + OCR transcript (iOS 1.5 · system Vision / optional Xiaomi-OCR-0)
 - [ ] Custom output paper (B5 / Letter) and DPI
 - [ ] Desktop folder-watch daemon
-- [ ] Optional OCR text layer (keeps original image)
+- [ ] Searchable PDF text layer (currently a sibling `.txt`, print PDF untouched)
 - [x] Windows portable build (v1.1.0)
 - [ ] Linux CLI build
 
@@ -181,7 +221,7 @@ Issues and PRs welcome — let's make this a real open-source gem together.
 | Version | Platform | Artifact | Notes |
 |---|---|---|---|
 | v1.5.0 | macOS | `ClearPaper-macOS-1.5.0.dmg` | New logo + ClearPaper rebrand; sidebar UI |
-| v1.5.0 | iOS | `ClearPaper-iOS-1.5.0-unsigned.ipa` | New logo; native app, fully on-device, self-sign |
+| v1.5.0 | iOS | `ClearPaper-iOS-1.5.0-unsigned.ipa` | build 7: four-tab UI (Process / Merge / Files / About), `by jpruby` + real version, document scanning + on-device OCR transcript, multi-file merge, file manager, appearance setting; optional Xiaomi-OCR-0 backend |
 | v1.2.0 | Windows | `ClearPaper-Windows-portable.zip` | ClearPaper rebrand; portable, bundled deps, drag-and-drop |
 
 > Current distribution uses a local **Apple Development** certificate: the Mac DMG opens on the same account; for others, re-sign with a **Developer ID** and notarize via `notarytool` (command ready, no code change). iOS free signatures last 7 days.

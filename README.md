@@ -61,10 +61,12 @@
   <br><sub>同一页同一区域：上=处理前（可见背面文字虚影），下=处理后</sub>
 </p>
 
-iPhone 上的处理结果卡片（全离线，导入 PDF → 本机处理 → 打印 / 分享 / 存到文件）：
+iOS 端是四页式界面（全离线，导入 / 拍照 → 本机处理 → 合并 / 打印 / 分享 / 存到文件）：
 
 <p align="center">
-  <img src="docs/screenshots/ios-result.png" width="300" alt="iOS 处理结果">
+  <img src="docs/screenshots/ios-ui.png" width="290" alt="iOS 处理页">
+  <img src="docs/screenshots/ios-about.png" width="290" alt="iOS 关于页">
+  <br><sub>左：处理页（拍照扫描、去透印开关、任务卡片）　右：关于页（by jpruby · 版本 1.5.0 (7)）</sub>
 </p>
 
 ## 🚀 快速开始（不用编译）
@@ -91,6 +93,15 @@ App 自带清晰化引擎，**朋友电脑不需要 Python、venv 或任何配�
 4. 微信里收到试卷 →「用其他应用打开」→ 选 **ClearPaper**；或在 App 内点「导入试卷 PDF」。
 
 > 个人免费账号签名 **7 天**有效，到期重签一次即可；文件都在手机本机，不会丢。
+
+**iOS 端现在有什么（1.5.0 / build 7）**
+
+- 四个标签页：**处理 / 合并 / 文件 / 关于**，暖灰配色跟随系统深浅色（也能手动锁定）；
+- **关于**页有 Logo、**by jpruby**、从 `Info.plist` 读取的真实版本号与构建号、开源地址；
+- **处理**页：导入 PDF、拍照扫描、相册多选；去透印与「导入后自动开始」开关；任务卡片显示页数 / 纸面宽度 / 笔画保留率 / 透印处理状态 / 耗时，可预览、打印、分享、存到文件、重试、删除；
+- **合并**页：完全合并 / 间隔·双面（每份后补空白页，双面打印不跨卷）/ 分别保存，顺序可上下调整，与 macOS 端共用 `engine/Merge.swift`；
+- **文件**页：输出 PDF 与 OCR 文字稿统一列出，按时间排序，可预览、打印、分享、复制、加入合并、删除；
+- **拍照 + OCR**：见下一节。
 
 ### Windows · 解压即用（免安装）
 
@@ -123,6 +134,33 @@ gamma 不是写死的：从小到大试，直到「原图真实笔画在输出�
 
 踩过的两个坑都已解决：平场校正由加法改为**乘法白点归一化**（淡笔画不再被推成纯白）；非锐化掩模改为**只加深不提亮**的单向锐化（笔画丢失从 7.9% 降到 0–1%）。
 
+## 📷 拍照 + OCR：拍完就能整理
+
+iOS 端除了导入 PDF，还能直接拍：
+
+1. **拍照扫描**：调系统文档相机（`VisionKit`），多页连拍、自动找边与透视矫正；也可以从相册一次选多张。
+2. **合成并清晰化**：照片合成 PDF 后走**同一套** ScanCore 流程（裁边 / 去透印 / 横竖 A4 / 质量闸门），打印质量与导入的 PDF 一致。
+3. **本机 OCR**：系统 `Vision` 识别中英文（离线、零额外体积），导出 `<标题>-文字.txt`，并用首页最像标题的一行**自动给文件命名**。文字稿可在 App 里查看、全选复制、分享，在「文件」页与 PDF 一起管理。
+
+> PDF 本身仍是图像，不叠加文字层，避免破坏打印效果与笔画质量闸门。
+
+### 进阶：小米开源的 Xiaomi-OCR-0
+
+[Xiaomi-OCR-0](https://github.com/xiaomi-research/Xiaomi-OCR-0)（0.8B，Apache 2.0，2026-10-30 开源）能把整页解析成**结构化 Markdown**（表格 OTSL、公式 LaTeX），还能做字段抽取（JSON）与文档问答。`python/ocr_xiaomi.py` 是它的轻量桥接后端，按官方 `DOC_PROMPT` 和请求格式调用**本机**的 OpenAI 兼容服务：
+
+```bash
+# 先起服务（任选其一，权重约 1.8–2GB，需要 GPU 或较快的 CPU）
+vllm serve SeerRay-Lab/Xiaomi-OCR-0 --host 127.0.0.1 --port 8000 --max-model-len 16384
+
+cd python
+python ocr_xiaomi.py 某试卷.pdf                 # → 某试卷-OCR.md
+python ocr_xiaomi.py 表格.png --task kie --fields "姓名,学号,总分"
+```
+
+服务地址只接受 `127.0.0.1 / localhost`，**不会把文档发到外网**；环境变量 `XIAOMI_OCR_LOCAL_URL` / `XIAOMI_OCR_MODEL` 与官方 Demo 同名。Ollama（社区 BF16 GGUF）或 SGLang 也能直接用。
+
+**为什么模型不塞进 IPA**：0.8B 的 Qwen3.5 多模态权重约 1.8GB，需要 Core ML / GGUF 转换与专有推理运行时；塞进去会让现在 450KB 的 IPA 膨胀几千倍，还会拖慢启动与处理。所以 iPhone 上用系统 Vision 做「即开即用」的文字识别，Xiaomi-OCR-0 留给桌面 / 服务器做结构化整理，两者产物（`.txt` / `.md`）都能在「文件」页查看。追求最佳解析质量时，用小米官方的 Demo / MCP 服务（含版面分析与后处理）。
+
 ## 🛠 从源码构建
 
 仓库克隆后，两端都能在本机直接编译，**无需任何第三方依赖**（Swift 标准库 + 系统框架即可）。
@@ -154,7 +192,7 @@ cd ios
 ./build_sim.sh shot.png        # 构建、安装、启动模拟器，并可截图
 ```
 
-> 需要 Xcode 命令行工具与 iOS SDK（`xcode-select --install`）。图标已随仓库提交，构建不依赖 Python。
+> 需要 Xcode 命令行工具与 iOS SDK（`xcode-select --install`）。图标与 `ios/Logo.png` 已随仓库提交；`Core.swift`（引擎）、`Merge.swift`（合并）、`Capture.swift`（拍照 + OCR）都是源码直编，只链接系统框架，不依赖 Python 或任何第三方库。
 
 ## 🐍 Python 参考引擎（可选）
 
@@ -165,14 +203,17 @@ cd python
 pip install pymupdf numpy pillow scipy
 ./bin/scanpdf 某试卷.pdf          # 输出 <名字>-清晰版.pdf
 ./bin/scanpdf --check            # 自检
+# 可选：接本机 Xiaomi-OCR-0 做结构化 Markdown（见「拍照 + OCR」一节）
+python ocr_xiaomi.py 某试卷.pdf   # 输出 <名字>-OCR.md
 ```
 
 ## 🗺 路线图
 
-- [ ] 多页拼接 / 双面试卷自动合并
+- [x] 多页拼接 / 双面试卷自动合并（macOS 1.3 / iOS 1.5）
+- [x] 拍照扫描 + OCR 文字稿（iOS 1.5 · 系统 Vision / 可选 Xiaomi-OCR-0）
 - [ ] 自定义输出纸张（B5 / Letter）与 DPI
 - [ ] 批量文件夹监视（桌面端常驻）
-- [ ] 更多语言的 OCR 文字层（保留原图、可选叠加）
+- [ ] 可搜索 PDF 文字层（目前导出 `.txt` 旁文件，不改动打印用 PDF）
 - [x] Windows 免安装版（v1.1.0）
 - [ ] Linux 命令行版
 
@@ -183,7 +224,7 @@ pip install pymupdf numpy pillow scipy
 | 版本 | 平台 | 产物 | 说明 |
 |---|---|---|---|
 | v1.5.0 | macOS | `ClearPaper-macOS-1.5.0.dmg` | 新 Logo + 品牌更名 ClearPaper；侧边栏 UI |
-| v1.5.0 | iOS | `ClearPaper-iOS-1.5.0-unsigned.ipa` | 新 Logo；原生 App，全离线，需自签安装 |
+| v1.5.0 | iOS | `ClearPaper-iOS-1.5.0-unsigned.ipa` | build 7：全新四页 UI（处理 / 合并 / 文件 / 关于）、by jpruby 与真实版本信息、拍照扫描 + 本机 OCR 文字稿、多份合并、文件管理、外观设置；可选 Xiaomi-OCR-0 后端 |
 | v1.2.0 | Windows | `ClearPaper-Windows-portable.zip` | 品牌更名 ClearPaper；免安装便携包，拖拽即用 |
 
 > 当前分发用的是本机 **Apple Development** 证书：Mac DMG 在本人/同账号下双击即开；发给他人建议用 **Developer ID** 重签并 `notarytool` 公证（命令已就绪，无需改代码）。iOS 个人账号签名 7 天有效。

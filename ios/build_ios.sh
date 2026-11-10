@@ -8,19 +8,28 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLS="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT="$1"
+# zip 前会 cd 到临时目录，先把输出路径转成绝对路径，否则相对路径会失效。
+case "$OUT" in
+  /*) ;;
+  *) OUT="$PWD/$OUT" ;;
+esac
 ICON_SET="$TOOLS/ios/icons"
+LOGO="$TOOLS/ios/Logo.png"
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 STAGE="$(mktemp -d)/Payload/ClearPaper.app"
 mkdir -p "$STAGE"
 
 [ -d "$ICON_SET" ] || { echo "缺少图标集：$ICON_SET" >&2; exit 1; }
+[ -f "$LOGO" ] || { echo "缺少 Logo：$LOGO" >&2; exit 1; }
 
 # -disable-sandbox：让 SwiftUI 的 macro plugin server 在受限构建环境（CI / 沙盒 shell）
 # 下也能启动；否则 @State 等宏无法展开。
 swiftc -parse-as-library -O -disable-sandbox \
   -target arm64-apple-ios16.0 -sdk "$SDK" \
   -framework SwiftUI -framework UIKit -framework PDFKit -framework ImageIO \
-  -o "$STAGE/ClearPaper" "$TOOLS/engine/Core.swift" "$TOOLS/ios/App.swift"
+  -framework Vision -framework VisionKit -framework PhotosUI \
+  -o "$STAGE/ClearPaper" "$TOOLS/engine/Core.swift" "$TOOLS/engine/Merge.swift" \
+     "$TOOLS/ios/Capture.swift" "$TOOLS/ios/App.swift"
 
 cat > "$STAGE/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -33,7 +42,9 @@ cat > "$STAGE/Info.plist" <<'PLIST'
   <key>CFBundleDisplayName</key><string>ClearPaper</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.5.0</string>
-  <key>CFBundleVersion</key><string>6</string>
+  <key>CFBundleVersion</key><string>7</string>
+  <key>CFBundleGetInfoString</key><string>ClearPaper 1.5.0 (7) by jpruby · 全离线处理</string>
+  <key>NSHumanReadableCopyright</key><string>© 2026 jpruby. MIT License.</string>
   <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
   <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
   <key>DTPlatformName</key><string>iphoneos</string>
@@ -43,6 +54,7 @@ cat > "$STAGE/Info.plist" <<'PLIST'
   <key>UIFileSharingEnabled</key><true/>
   <key>LSSupportsOpeningDocumentsInPlace</key><true/>
   <key>ITSAppUsesNonExemptEncryption</key><false/>
+  <key>NSCameraUsageDescription</key><string>用文档相机拍摄试卷，自动找边并矫正透视；照片只在本机处理，不会上传。</string>
   <key>CFBundleIcons</key>
   <dict>
     <key>CFBundlePrimaryIcon</key>
@@ -84,6 +96,7 @@ for f in AppIcon60x60@2x.png AppIcon60x60@3x.png AppIcon76x76@2x.png AppIcon83.5
   [ -f "$ICON_SET/$f" ] || { echo "缺少图标 $f" >&2; exit 1; }
   cp "$ICON_SET/$f" "$STAGE/$f"
 done
+cp "$LOGO" "$STAGE/Logo.png"
 
 /usr/bin/plutil -lint "$STAGE/Info.plist" >/dev/null
 file "$STAGE/ClearPaper" | grep -q "arm64" || { echo "编译产物不是 arm64" >&2; exit 1; }

@@ -34,6 +34,10 @@ public struct Report {
 
 public enum ScanCore {
 
+    /// 去背面透印开关。iOS / macOS 的设置页可直接改这个开关；
+    /// 环境变量 SCANPDF_NO_DEGHOST=1 仍作为命令行逃生通道。
+    public static var deghostEnabled = true
+
     // MARK: render
 
     /// Rendering through the page box is what neutralises bogus MediaBoxes:
@@ -365,7 +369,8 @@ public enum ScanCore {
     /// 并跳过照片区域，避免把浅色照片洗掉。
     static func deghost(_ a: Gray, photo: Gray) -> (Gray, Float) {
         // 调试/逃生开关：不希望动浅灰的文档可以关掉这一步
-        if ProcessInfo.processInfo.environment["SCANPDF_NO_DEGHOST"] == "1" { return (a, 0) }
+        if !ScanCore.deghostEnabled
+            || ProcessInfo.processInfo.environment["SCANPDF_NO_DEGHOST"] == "1" { return (a, 0) }
         // 真实笔画（含抗锯齿边缘）附近一律不动，只清孤立在空白处的浅灰
         var ink = [UInt8](repeating: 0, count: a.px.count)
         for i in 0..<a.px.count where a.px[i] < 120 { ink[i] = 255 }

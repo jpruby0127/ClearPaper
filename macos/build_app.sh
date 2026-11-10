@@ -43,7 +43,7 @@ if ! swiftc -O -disable-sandbox -target "$(uname -m)-apple-macosx12.0" \
   -framework AppKit -framework Foundation -framework PDFKit \
   -framework ImageIO -framework CoreGraphics \
   -o "$APP/Contents/MacOS/$NAME.new" \
-  "$TOOLS/engine/Core.swift" "$TOOLS/macos/main.swift"; then
+  "$TOOLS/engine/Core.swift" "$TOOLS/engine/Merge.swift" "$TOOLS/macos/main.swift"; then
   echo "编译失败，未写入目标" >&2
   rm -f "$APP/Contents/MacOS/$NAME.new"
   exit 1

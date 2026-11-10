@@ -8,50 +8,7 @@ import UniformTypeIdentifiers
 // UI 采用「侧边栏 + 内容卡片」布局：处理 / 设置 / 帮助。
 
 // MARK: - 多份合并
-
-enum MergeMode: Int {
-    case separate = 0
-    case full = 1
-    case duplex = 2
-}
-
-func blankPDFPage(size: CGSize) -> PDFPage? {
-    let data = NSMutableData()
-    guard let consumer = CGDataConsumer(data: data as CFMutableData) else { return nil }
-    var box = CGRect(origin: .zero, size: size)
-    guard let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return nil }
-    ctx.beginPage(mediaBox: &box)
-    ctx.endPage()
-    ctx.closePDF()
-    guard let doc = PDFDocument(data: data as Data) else { return nil }
-    return doc.page(at: 0)
-}
-
-/// 按顺序合并；duplex 模式下为每份非末尾文档补齐到偶数页（补空白页）。
-func mergePDFs(_ urls: [URL], mode: MergeMode, to out: URL) -> Int {
-    let merged = PDFDocument()
-    for (idx, url) in urls.enumerated() {
-        guard let doc = PDFDocument(url: url) else { continue }
-        let n = doc.pageCount
-        guard n > 0 else { continue }
-        let lastSize = doc.page(at: n - 1)?.bounds(for: .mediaBox).size
-            ?? CGSize(width: 595.28, height: 841.89)
-        for i in 0..<n {
-            if let page = doc.page(at: i) {
-                merged.insert(page, at: merged.pageCount)
-            }
-        }
-        if mode == .duplex, idx < urls.count - 1, n % 2 == 1 {
-            if let blank = blankPDFPage(size: lastSize) {
-                merged.insert(blank, at: merged.pageCount)
-            } else {
-                return 0
-            }
-        }
-    }
-    guard merged.pageCount > 0 else { return 0 }
-    return merged.write(to: out) ? merged.pageCount : 0
-}
+// MergeMode / blankPDFPage / mergePDFs 已抽到 engine/Merge.swift，与 iOS 共用。
 
 // MARK: - 输出目录（沙盒安全）
 
