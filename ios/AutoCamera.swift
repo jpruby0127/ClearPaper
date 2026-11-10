@@ -67,17 +67,32 @@ enum FrameAnalyzer {
         CIImage(cvImageBuffer: pb).oriented(forExifOrientation: 6)
     }
 
+    /// 优先用「文档分割」找纸边（专为纸张训练，比通用矩形检测更抗试卷上的
+    /// 表格框与密集文字）；找不到再退回通用矩形检测。
     static func detect(_ ci: CIImage) -> (rect: CGRect, quad: Quad)? {
-        let req = VNDetectRectanglesRequest()
-        req.minimumConfidence = 0.5
-        req.minimumSize = 0.20
-        req.minimumAspectRatio = 0.25
-        req.maximumObservations = 3
+        if let found = bestQuad(VNDetectDocumentSegmentationRequest(), ci: ci) { return found }
+        return bestQuad(VNDetectRectanglesRequest(), ci: ci)
+    }
+
+    private static func bestQuad(_ request: VNImageBasedRequest, ci: CIImage)
+        -> (rect: CGRect, quad: Quad)? {
+        if let r = request as? VNDetectRectanglesRequest {
+            r.minimumConfidence = 0.5
+            r.minimumSize = 0.20
+            r.minimumAspectRatio = 0.25
+            r.maximumObservations = 3
+        }
         let handler = VNImageRequestHandler(ciImage: ci, orientation: .up, options: [:])
-        do { try handler.perform([req]) } catch { return nil }
-        guard let list = req.results, !list.isEmpty else { return nil }
+        do { try handler.perform([request]) } catch { return nil }
+        let observations: [VNRectangleObservation]
+        if let r = request as? VNDetectDocumentSegmentationRequest {
+            observations = r.results ?? []
+        } else if let r = request as? VNDetectRectanglesRequest {
+            observations = r.results ?? []
+        } else { return nil }
+        guard !observations.isEmpty else { return nil }
         var best: (CGRect, Quad)?
-        for o in list {
+        for o in observations {
             let pts = [o.topLeft, o.topRight, o.bottomRight, o.bottomLeft]
             let xs = pts.map(\.x), ys = pts.map(\.y)
             guard let minX = xs.min(), let maxX = xs.max(),
