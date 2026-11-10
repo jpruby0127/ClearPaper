@@ -28,8 +28,10 @@ swiftc -parse-as-library -O -disable-sandbox \
   -target arm64-apple-ios16.0 -sdk "$SDK" \
   -framework SwiftUI -framework UIKit -framework PDFKit -framework ImageIO \
   -framework Vision -framework VisionKit -framework PhotosUI \
+  -framework AVFoundation -framework CoreImage -framework CoreMedia \
+  -framework CoreVideo -framework QuartzCore \
   -o "$STAGE/ClearPaper" "$TOOLS/engine/Core.swift" "$TOOLS/engine/Merge.swift" \
-     "$TOOLS/ios/Capture.swift" "$TOOLS/ios/App.swift"
+     "$TOOLS/ios/Capture.swift" "$TOOLS/ios/AutoCamera.swift" "$TOOLS/ios/App.swift"
 
 cat > "$STAGE/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -42,8 +44,8 @@ cat > "$STAGE/Info.plist" <<'PLIST'
   <key>CFBundleDisplayName</key><string>ClearPaper</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.5.0</string>
-  <key>CFBundleVersion</key><string>7</string>
-  <key>CFBundleGetInfoString</key><string>ClearPaper 1.5.0 (7) by jpruby · 全离线处理</string>
+  <key>CFBundleVersion</key><string>8</string>
+  <key>CFBundleGetInfoString</key><string>ClearPaper 1.5.0 (8) by jpruby · 全离线处理</string>
   <key>NSHumanReadableCopyright</key><string>© 2026 jpruby. MIT License.</string>
   <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
   <key>CFBundleSupportedPlatforms</key><array><string>iPhoneOS</string></array>
@@ -54,7 +56,7 @@ cat > "$STAGE/Info.plist" <<'PLIST'
   <key>UIFileSharingEnabled</key><true/>
   <key>LSSupportsOpeningDocumentsInPlace</key><true/>
   <key>ITSAppUsesNonExemptEncryption</key><false/>
-  <key>NSCameraUsageDescription</key><string>用文档相机拍摄试卷，自动找边并矫正透视；照片只在本机处理，不会上传。</string>
+  <key>NSCameraUsageDescription</key><string>用相机拍摄试卷，自动找边、矫正透视并识别翻页；照片只在本机处理，不会上传。</string>
   <key>CFBundleIcons</key>
   <dict>
     <key>CFBundlePrimaryIcon</key>

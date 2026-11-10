@@ -48,7 +48,7 @@ enum About {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.5.0"
     }
     static var build: String {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "7"
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "8"
     }
     static var versionLine: String { "版本 \(version) (\(build))" }
     static let author = "jpruby"
@@ -107,6 +107,8 @@ final class Job: Identifiable, ObservableObject {
     @Published var textURL: URL?
     @Published var ocrLines = 0
     @Published var captured = false
+    /// 拍摄原稿（每页 JPEG）的持久目录；系统清掉 tmp 后仍可凭它重建 PDF 重试。
+    var captureDir: URL?
     @Published var state: JobState = .queued
     @Published var progress: Double = 0
     @Published var phase = "准备中…"
@@ -184,6 +186,25 @@ final class Store: ObservableObject {
         return d
     }
 
+    /// 拍摄原稿放 Application Support：不会被系统当缓存清掉，也不会出现在「文件」App 里。
+    var captureRoot: URL {
+        let d = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ClearPaper/Captures", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+
+    /// 真机上同一个文件可能分别表示为 /var/… 与 /private/var/…，
+    /// 或中文目录被百分号编码；直接比较两个 URL 会误判成「文件已被删除」。
+    /// 统一解符号链接 + 取 decoding 后的 path 再比。
+    static func sameFile(_ a: URL, _ b: URL) -> Bool {
+        a.resolvingSymlinksInPath().path == b.resolvingSymlinksInPath().path
+    }
+
+    static func exists(_ u: URL) -> Bool {
+        FileManager.default.fileExists(atPath: u.path)
+    }
+
     /// 外部来源（文件 App / 微信）是安全作用域 URL，先复制到唯一的临时目录。
     /// 目录唯一但保留原文件名，避免任务列表与输出文件出现 UUID 前缀。
     static func stage(_ u: URL) -> URL? {
@@ -226,13 +247,17 @@ final class Store: ObservableObject {
     /// 拍照 / 相册图片 → PDF → 本机 OCR → 文字稿 → 走同一套清晰化流程。
     /// 识别出的首页标题会同时用作任务名与输出文件名，拍完即可归档。
     func addCaptured(_ images: [UIImage]) {
-        guard !images.isEmpty else { return }
+        // 系统相机/相册导入也可能带进重复页，统一先做感知哈希去重。
+        let pages = Capture.uniquePages(images)
+        guard !pages.isEmpty else { return }
         let fm = FileManager.default
-        let placeholder = fm.temporaryDirectory
-            .appendingPathComponent("拍摄-\(UUID().uuidString).pdf")
-        let j = Job(url: placeholder)
+        let dir = captureRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let pdf = dir.appendingPathComponent("拍摄原件.pdf")
+        let j = Job(url: pdf)
         j.state = .working
         j.captured = true
+        j.captureDir = dir
         j.phase = "整理拍摄件…"
         jobs.insert(j, at: 0)
         busy = true
@@ -243,8 +268,14 @@ final class Store: ObservableObject {
             df.locale = Locale(identifier: "en_US_POSIX")
             df.dateFormat = "yyyyMMdd-HHmmss"
             let stamp = df.string(from: Date())
-            let pdf = fm.temporaryDirectory.appendingPathComponent("拍摄-\(stamp).pdf")
-            guard Capture.pdf(from: images, to: pdf) else {
+            // 原稿逐页落盘：App 被挂起 / tmp 被系统清理后仍可重建，重试不会再失败。
+            for (i, img) in pages.enumerated() {
+                if let data = img.jpegData(compressionQuality: 0.92) {
+                    let p = dir.appendingPathComponent(String(format: "page-%03d.jpg", i))
+                    try? data.write(to: p, options: .atomic)
+                }
+            }
+            guard Capture.pdf(from: pages, to: pdf) else {
                 DispatchQueue.main.async {
                     j.state = .failed("拍摄件合成 PDF 失败")
                     j.phase = "未通过"
@@ -252,7 +283,7 @@ final class Store: ObservableObject {
                 }
                 return
             }
-            let ocr = Capture.recognize(images)
+            let ocr = Capture.recognize(pages)
             let title = Capture.suggestedName(ocr) ?? "拍摄-\(stamp)"
             let stem = String(title.prefix(40))
                 .components(separatedBy: CharacterSet(charactersIn: "/\\:*?\"<>|\n\r"))
@@ -260,19 +291,32 @@ final class Store: ObservableObject {
             let txt = self.docsDir.appendingPathComponent(stem + "-文字.txt")
             try? Capture.text(ocr).write(to: txt, atomically: true, encoding: .utf8)
 
-            j.url = pdf
             j.outputStem = stem
             let lineCount = ocr.reduce(0) { $0 + $1.lines.count }
+            let dropped = images.count - pages.count
             DispatchQueue.main.async {
                 j.name = title
                 j.textURL = txt
                 j.ocrLines = lineCount
-                j.phase = "识别完成，开始清晰化…"
+                j.phase = dropped > 0
+                    ? "已跳过 \(dropped) 张重复页，开始清晰化…"
+                    : "识别完成，开始清晰化…"
             }
             self.makeThumb(j)
             self.run(j, announce: false)
             self.refreshFiles()
         }
+    }
+
+    /// 重试前确保源 PDF 还在；拍摄任务可直接用落盘的原稿重建。
+    private func ensureSource(_ j: Job) -> Bool {
+        if Store.exists(j.url) { return true }
+        guard let dir = j.captureDir,
+              let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path)
+        else { return false }
+        let files = names.filter { $0.hasPrefix("page-") && $0.hasSuffix(".jpg") }.sorted()
+        let imgs = files.compactMap { UIImage(contentsOfFile: dir.appendingPathComponent($0).path) }
+        return !imgs.isEmpty && Capture.pdf(from: imgs, to: j.url)
     }
 
     func add(_ urls: [URL]) {
@@ -312,11 +356,25 @@ final class Store: ObservableObject {
         j.result = nil
         j.phase = "重新开始…"
         busy = true
-        queue.async { [weak self] in self?.run(j, announce: false) }
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard self.ensureSource(j) else {
+                DispatchQueue.main.async {
+                    j.state = .failed("原稿已丢失，请重新拍摄或导入")
+                    j.phase = "无法重试"
+                    self.busy = self.jobs.contains { $0.state == .working }
+                }
+                return
+            }
+            self.run(j, announce: false)
+        }
     }
 
     func remove(_ j: Job) {
-        if let r = j.result { mergeURLs.removeAll { $0 == r } }
+        if let r = j.result { mergeURLs.removeAll { Store.sameFile($0, r) } }
+        if let dir = j.captureDir {
+            ioQueue.async { try? FileManager.default.removeItem(at: dir) }
+        }
         jobs.removeAll { $0.id == j.id }
     }
 
@@ -353,12 +411,18 @@ final class Store: ObservableObject {
             j.seconds = rep.seconds
             j.showThrough = rep.decisions.showThrough
             if rep.passed && rep.pages > 0 {
-                j.result = dst
-                j.state = .done
-                j.phase = "完成"
-                self.addToMerge(dst)
-                self.refreshFiles()
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                if Store.exists(dst) {
+                    j.result = dst
+                    j.state = .done
+                    j.phase = "完成"
+                    self.addToMerge(dst)
+                    self.refreshFiles()
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                } else {
+                    j.state = .failed("输出文件写入失败，可重试")
+                    j.phase = "未生成文件"
+                    UINotificationFeedbackGenerator().notificationOccurred(.error)
+                }
             } else {
                 j.state = .failed(rep.problems.first ?? "处理失败")
                 j.phase = "未通过质量闸门"
@@ -389,20 +453,22 @@ final class Store: ObservableObject {
     }
 
     func addToMerge(_ u: URL) {
-        if !mergeURLs.contains(u) { mergeURLs.append(u) }
+        if !mergeURLs.contains(where: { Store.sameFile($0, u) }) { mergeURLs.append(u) }
     }
 
     func moveMerge(_ u: URL, by delta: Int) {
-        guard let i = mergeURLs.firstIndex(of: u) else { return }
+        guard let i = mergeURLs.firstIndex(where: { Store.sameFile($0, u) }) else { return }
         let j = i + delta
         guard j >= 0, j < mergeURLs.count else { return }
         mergeURLs.swapAt(i, j)
     }
 
-    func removeFromMerge(_ u: URL) { mergeURLs.removeAll { $0 == u } }
+    func removeFromMerge(_ u: URL) {
+        mergeURLs.removeAll { Store.sameFile($0, u) }
+    }
 
     func performMerge() {
-        let urls = mergeURLs.filter { FileManager.default.fileExists(atPath: $0.path) }
+        let urls = mergeURLs.filter { Store.exists($0) }
         guard urls.count >= 2 else {
             mergeMessage = "至少要有 2 份清晰版才能合并"
             return
@@ -453,15 +519,20 @@ final class Store: ObservableObject {
             }
             list.sort { $0.date > $1.date }
             DispatchQueue.main.async {
-                self?.files = list
-                // 已被删除的结果不要再留在任务/合并队列里
-                for j in self?.jobs ?? [] {
-                    if let r = j.result, !list.contains(where: { $0.url == r }) {
+                guard let self else { return }
+                self.files = list
+                // 只按「磁盘上是否真的存在」判定，绝不用目录枚举出来的 URL 做字符串比较：
+                // 真机上 /var 与 /private/var、中文路径的百分号编码都会让两个 URL 不相等，
+                // 从而把刚刚生成好的结果误报成「已被删除」。
+                for j in self.jobs {
+                    if let r = j.result, !Store.exists(r) {
                         j.result = nil
-                        j.state = .failed("结果文件已被删除，可重试")
+                        j.state = .failed("结果文件已移走，可重试重新生成")
+                        j.phase = "输出文件不在本机"
                     }
+                    if let t = j.textURL, !Store.exists(t) { j.textURL = nil }
                 }
-                self?.mergeURLs.removeAll { u in !list.contains(where: { $0.url == u }) }
+                self.mergeURLs.removeAll { !Store.exists($0) }
             }
         }
     }
@@ -816,8 +887,8 @@ struct ProcessView: View {
     var captureRow: some View {
         HStack(spacing: 10) {
             Button {
-                if Capture.scannerSupported { router.scan() }
-                else { cameraUnsupported = true }
+                // 相机页自带无相机 / 无权限的兜底，以及「改用系统文档相机」入口
+                router.scan()
             } label: {
                 captureTile("camera.viewfinder", "拍照扫描", Pal.amber)
             }.buttonStyle(.plain)
@@ -1393,7 +1464,7 @@ struct AboutView: View {
                         feature("rectangle.portrait.rotate", "横竖页自适应", "横向排版自动输出横向 A4，不会被裁掉", Pal.green, Pal.greenSoft)
                         feature("square.on.square", "多份合并", "完全合并 / 间隔·双面，双面打印不跨卷", Pal.blue, Pal.blueSoft)
                         feature("checkmark.seal", "质量闸门", "笔画保留率低于 97% 会提示，不静默出坏结果", Pal.green, Pal.greenSoft)
-                        feature("camera.viewfinder", "拍照 + OCR", "多页连拍自动找边，本机识别文字、自动命名并导出文字稿", Pal.amber, Pal.amberSoft)
+                        feature("camera.viewfinder", "翻页自动拍 + OCR", "拍完锁定，翻页放稳才拍下一张；本机识别文字、自动命名并导出文字稿", Pal.amber, Pal.amberSoft)
                     }
                 }
 
@@ -1412,6 +1483,11 @@ struct AboutView: View {
 
                 Card(padding: 14) {
                     VStack(alignment: .leading, spacing: 8) {
+                        SectionTitle(title: "关于翻页自动拍")
+                        Text("第一页放稳后自动拍；拍完立即锁定快门，没翻页就一直等，不会把同一页连拍好几张。检测到翻页后还要等页面稳定、手指离开、画面清晰才拍下一张，最后再用感知哈希兜底去重。随时可以手动点快门、撤销上一页或切回系统文档相机。")
+                            .font(.caption2).foregroundStyle(Pal.sub)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Divider().background(Pal.line)
                         SectionTitle(title: "关于 OCR")
                         Text("iPhone 上用系统 Vision 引擎识别中英文，全离线、零额外体积：输出 .txt 文字稿，并用首页标题自动给文件命名。PDF 本身保持图像，保证打印质量。")
                             .font(.caption2).foregroundStyle(Pal.sub)
@@ -1512,6 +1588,13 @@ struct ContentView: View {
             guard !didImport else { return }
             didImport = true
             store.importInbox()
+            // 调试入口：simctl launch ... -ClearPaperSheet scanner 可直接打开相机页，
+            // 方便在没有摄像头的模拟器里检查兜底界面。
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-ClearPaperSheet"), i + 1 < args.count,
+               args[i + 1] == "scanner" {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { router.scan() }
+            }
         }
         .onChange(of: router.requestedTab) { t in
             if let t { tab = t; router.requestedTab = nil }
@@ -1559,11 +1642,14 @@ struct SheetContent: View {
         case .text(let u):
             TextViewSheet(url: u)
         case .scanner:
-            DocumentScanner { imgs in
-                router.close()
-                store.addCaptured(imgs)
-                router.goto(.process)
-            }
+            AutoCameraSheet(
+                done: { imgs in
+                    router.close()
+                    store.addCaptured(imgs)
+                    router.goto(.process)
+                },
+                cancel: { router.close() }
+            )
         }
     }
 }

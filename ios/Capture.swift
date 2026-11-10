@@ -15,6 +15,75 @@ import PDFKit
 // 更重的结构化解析（整页 Markdown、表格、字段 JSON）由 Python 参考引擎里
 // 可选的 Xiaomi-OCR-0 后端提供，见 python/ocr_xiaomi.py。
 
+// MARK: - 页面指纹：自动连拍去重
+
+/// 32×32 灰度 + 64 位 dHash。纯本地运算，不依赖任何模型。
+enum PageFingerprint {
+    static let n = 32
+
+    static func gray(_ image: UIImage) -> [UInt8]? {
+        guard let cg = image.cgImage,
+              let ctx = CGContext(data: nil, width: n, height: n, bitsPerComponent: 8,
+                                  bytesPerRow: n, space: CGColorSpaceCreateDeviceGray(),
+                                  bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { return nil }
+        ctx.interpolationQuality = .low
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: n, height: n))
+        guard let p = ctx.data else { return nil }
+        let buf = p.bindMemory(to: UInt8.self, capacity: n * n)
+        return (0..<(n * n)).map { buf[$0] }
+    }
+
+    /// 把灰度图降成 9×8 均值网格，比较水平梯度得到 64 位哈希。
+    static func dHash(_ g: [UInt8]) -> UInt64 {
+        var small = [UInt8](repeating: 0, count: 9 * 8)
+        for y in 0..<8 {
+            for x in 0..<9 {
+                let x0 = Int(CGFloat(x) * 32 / 9)
+                let x1 = max(x0 + 1, Int(CGFloat(x + 1) * 32 / 9))
+                var sum = 0, count = 0
+                for yy in (y * 4)..<((y + 1) * 4) {
+                    for xx in x0..<min(32, x1) {
+                        sum += Int(g[yy * 32 + xx]); count += 1
+                    }
+                }
+                small[y * 9 + x] = UInt8(clamping: sum / max(1, count))
+            }
+        }
+        var h: UInt64 = 0
+        for y in 0..<8 {
+            for x in 0..<8 where small[y * 9 + x] > small[y * 9 + x + 1] {
+                h |= (UInt64(1) << UInt64(y * 8 + x))
+            }
+        }
+        return h
+    }
+
+    static func distance(_ a: UInt64, _ b: UInt64) -> Int {
+        var v = a ^ b, c = 0
+        while v != 0 { v &= v - 1; c += 1 }
+        return c
+    }
+
+    static func meanDiff(_ a: [UInt8], _ b: [UInt8]) -> Int {
+        guard a.count == b.count, !a.isEmpty else { return 255 }
+        var s = 0
+        for i in a.indices { s += abs(Int(a[i]) - Int(b[i])) }
+        return s / a.count
+    }
+
+    /// 纹理能量：太低说明画面糊成一片或完全虚焦，不值得拍。
+    static func sharpness(_ g: [UInt8]) -> Int {
+        var s = 0
+        for y in 1..<n {
+            for x in 1..<n {
+                s += abs(Int(g[y * n + x]) - Int(g[y * n + x - 1]))
+            }
+        }
+        return s / ((n - 1) * (n - 1))
+    }
+}
+
 struct OCRLine {
     let text: String
     /// 归一化坐标，原点在左下（Vision 的原始输出）
@@ -28,6 +97,26 @@ struct OCRPage {
 enum Capture {
     static var scannerSupported: Bool {
         VNDocumentCameraViewController.isSupported
+    }
+
+    /// 剔除自动连拍带进来的重复页。dHash 与灰度均差同时命中才丢，
+    /// 版式相近但内容不同的两页（比如同一份卷子的第 1、2 页）不会被误删。
+    static func uniquePages(_ images: [UIImage]) -> [UIImage] {
+        var out: [UIImage] = []
+        var lastGray: [UInt8]?
+        var lastHash: UInt64?
+        for img in images {
+            guard let g = PageFingerprint.gray(img) else { out.append(img); continue }
+            let h = PageFingerprint.dHash(g)
+            if let lh = lastHash, PageFingerprint.distance(lh, h) <= 10,
+               let lg = lastGray, PageFingerprint.meanDiff(lg, g) <= 9 {
+                continue
+            }
+            out.append(img)
+            lastGray = g
+            lastHash = h
+        }
+        return out
     }
 
     /// 多张图片 → 一份按图片比例分页的临时 PDF，可直接喂给 ScanCore.process。
@@ -108,8 +197,9 @@ enum Capture {
 
 struct DocumentScanner: UIViewControllerRepresentable {
     let done: ([UIImage]) -> Void
+    var cancel: (() -> Void)? = nil
 
-    func makeCoordinator() -> Coordinator { Coordinator(done: done) }
+    func makeCoordinator() -> Coordinator { Coordinator(done: done, cancel: cancel) }
 
     func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
         let vc = VNDocumentCameraViewController()
@@ -121,7 +211,11 @@ struct DocumentScanner: UIViewControllerRepresentable {
 
     final class Coordinator: NSObject, VNDocumentCameraViewControllerDelegate {
         let done: ([UIImage]) -> Void
-        init(done: @escaping ([UIImage]) -> Void) { self.done = done }
+        let cancel: (() -> Void)?
+        init(done: @escaping ([UIImage]) -> Void, cancel: (() -> Void)?) {
+            self.done = done
+            self.cancel = cancel
+        }
 
         func documentCameraViewController(_ controller: VNDocumentCameraViewController,
                                           didFinishWith scan: VNDocumentCameraScan) {
@@ -131,12 +225,12 @@ struct DocumentScanner: UIViewControllerRepresentable {
         }
 
         func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
-            controller.dismiss(animated: true)
+            controller.dismiss(animated: true) { self.cancel?() }
         }
 
         func documentCameraViewController(_ controller: VNDocumentCameraViewController,
                                           didFailWithError error: Error) {
-            controller.dismiss(animated: true)
+            controller.dismiss(animated: true) { self.cancel?() }
         }
     }
 }
