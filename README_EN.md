@@ -8,12 +8,12 @@
 
 <p align="center">
   <b>Turn blurry, dark, scan-framed exam-PDFs into print-ready, crisp A4 — in one step.</b><br>
-  Native macOS / iOS apps plus a Windows portable build. <b>100% on-device, zero dependencies, no network, no server.</b>
+  Native macOS / iOS / Android apps plus a Windows portable build. <b>100% on-device, zero dependencies, no network, no server.</b>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20iOS%20%7C%20Windows-000000" alt="platform">
-  <img src="https://img.shields.io/badge/language-Swift%20%2F%20Python-orange" alt="language">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20iOS%20%7C%20Android%20%7C%20Windows-000000" alt="platform">
+  <img src="https://img.shields.io/badge/language-Swift%20%2F%20Java%20%2F%20Python-orange" alt="language">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license">
   <img src="https://img.shields.io/badge/author-jpruby-black" alt="author">
   <img src="https://img.shields.io/badge/engine-100%25%20on--device-green" alt="on-device">
@@ -69,6 +69,8 @@ The iOS app has four tabs (fully on-device: import / scan → process → merge 
   <br><sub>Left: process tab (scan, show-through toggle, job cards) · Right: about tab (by jpruby · v1.5.0 (10))</sub>
 </p>
 
+The Android build ships the same four-tab UI and the same engine — install the APK, no signing or computer needed.
+
 ## 🚀 Quick start (no build)
 
 ### macOS · drag into Applications
@@ -100,6 +102,16 @@ The app bundles its own engine — **no Python, venv, or config needed** on the 
 - **Merge**: full / duplex-safe (blank page after each document) / keep separate, reorderable, sharing `engine/Merge.swift` with macOS.
 - **Files**: output PDFs and OCR transcripts in one list — preview, print, share, copy, add to merge, delete.
 - **Scan + page review + OCR**: see the section below.
+
+### Android · install the APK
+
+1. Download **`ClearPaper-Android-1.5.0.apk`** from [Releases](https://github.com/jpruby0127/ClearPaper/releases) (~150 KB, Android 8.0+, pure Java, no native libs);
+2. Allow "install unknown apps" once, then open the APK;
+3. In WeChat, open a paper → "Open in another app" → choose **ClearPaper**; or import PDFs, capture pages, or pick photos from the Process tab.
+
+> Same as iOS: four tabs (Process / Merge / Files / About), logo, `by jpruby`, real version 1.5.0 (10), the page-review screen (delete / rotate / reorder / duplicate removal with restore), three merge modes, preview / print / share / save, and the appearance setting. Output lives in the app's own `清晰版` folder; use Share / Save to export it to the system file manager.
+>
+> Two platform gaps are bridged with equivalent implementations — see "Android notes" below: Android has no system document camera and no offline system OCR.
 
 ### Windows · portable, no install
 
@@ -153,6 +165,20 @@ On iOS you can capture pages directly, then review every page before processing:
 > The PDF itself stays image-only — no text layer is overlaid, so print quality and the stroke-retention gate are untouched.
 > Captured originals are persisted under Application Support so a retry still works after iOS clears the temp directory.
 
+### Android notes
+
+Android mirrors the UI and pipeline, with equivalent implementations for the two system capabilities the platform lacks:
+
+| Capability | iOS | Android |
+|---|---|---|
+| Multi-page capture | VisionKit document camera (auto shutter) | **Manual shutter, one page at a time** — no duplicate shots when you don't turn the page fast enough; page review still does dHash dedup with one-tap restore |
+| Edge / perspective correction | Vision document segmentation + geometric fallback | Pure geometry (Otsu + bright-run fitting + least squares + inverse homography); falls back to the original frame when no reliable paper edge exists — never a guessed crop |
+| OCR transcript | System Vision, offline, zero payload | Offline by default; enter your own Xiaomi-OCR-0 endpoint under About → OCR service to generate Markdown transcripts and auto-name from the first page |
+| PDF merge | PDFKit inserts pages as-is | `PdfRenderer` re-renders at 200 dpi; order / orientation / duplex blank pages are identical; pure-vector PDFs become image pages |
+| Cleanup engine | `engine/Core.swift` (Swift) | Line-by-line port `GrayMath.java` + a hand-written grayscale Flate image XObject writer `PdfWrite.java`; `android/test/run_test.sh` runs a JVM regression test on a Mac |
+
+Everything else is identical: white-point normalization → show-through suppression → adaptive gamma → darken-only sharpening → crop → portrait/landscape A4 → stroke-retention gate. Captured pages always run the full pipeline.
+
 ### Advanced: Xiaomi's open-source Xiaomi-OCR-0
 
 [Xiaomi-OCR-0](https://github.com/xiaomi-research/Xiaomi-OCR-0) (0.8B, Apache 2.0, released 2026-10-30) parses a whole page into **structured Markdown** (OTSL tables, LaTeX formulas), extracts fields as JSON and answers questions about a document. `python/ocr_xiaomi.py` is a lightweight bridge that calls a **local** OpenAI-compatible server using the official `DOC_PROMPT` and request shape:
@@ -171,7 +197,7 @@ Only `127.0.0.1 / localhost` is accepted — **documents never leave the machine
 
 ## 🛠 Build from source
 
-Clone and build either app — **no third-party dependencies** (Swift stdlib + system frameworks only).
+Clone and build every platform locally — **no third-party dependencies** (Swift stdlib + Android SDK build-tools + system frameworks only).
 
 ```bash
 git clone https://github.com/jpruby0127/ClearPaper.git
@@ -202,6 +228,16 @@ Run it in the simulator:
 
 > Needs Xcode command-line tools + iOS SDK (`xcode-select --install`). Icons and `ios/Logo.png` are committed; `Core.swift` (engine), `Merge.swift` (merge), `Capture.swift` (document camera + edge rectification + OCR) and `ScanReview.swift` (page review) compile straight from source against system frameworks only — no Python, no third-party libraries.
 
+### Android app (signed APK)
+
+```bash
+cd android
+./build_apk.sh        # aapt2 → javac → d8 → zipalign → apksigner → ../dist/ClearPaper-Android-1.5.0.apk
+./test/run_test.sh    # pure-JVM regression test for the engine + PDF writer, no emulator needed
+```
+
+> Only Android SDK `build-tools` and any `platforms/android-3x/android.jar` are required — **no Gradle / AndroidX / Maven / network**. The UI is built from framework Views, the engine is `GrayMath.java`, PDFs are written directly by `PdfWrite.java`, and merging uses the system `PdfRenderer`. The APK is v1 + v2 + v3 signed with a locally generated keystore.
+
 ## 🐍 Python reference engine (optional)
 
 The macOS/iOS apps use the **compiled-in Swift engine** (distributable, zero-dep). `python/` holds the **same algorithm as a reference implementation** for study, batch jobs, or servers:
@@ -222,6 +258,7 @@ python ocr_xiaomi.py some-paper.pdf
 - [ ] Custom output paper (B5 / Letter) and DPI
 - [ ] Desktop folder-watch daemon
 - [ ] Searchable PDF text layer (currently a sibling `.txt`, print PDF untouched)
+- [x] Native Android APK (v1.5.0 · four-tab UI / page review / three merge modes / same engine)
 - [x] Windows portable build (v1.1.0)
 - [ ] Linux CLI build
 
@@ -233,8 +270,11 @@ Issues and PRs welcome — let's make this a real open-source gem together.
 |---|---|---|---|
 | v1.5.0 | macOS | `ClearPaper-macOS-1.5.0.dmg` | New logo + ClearPaper rebrand; sidebar UI |
 | v1.5.0 | iOS | `ClearPaper-iOS-1.5.0-unsigned.ipa` | build 10: system document camera only, new "Check Pages" review screen (delete / rotate / reorder / duplicate removal with one-tap restore), per-page detection and rectification when VisionKit failed to crop, orientation and size normalization; the experimental custom camera is gone; captures still run the full ScanCore pipeline; four-tab UI, `by jpruby` + real version, on-device OCR transcript, multi-file merge, file manager, appearance setting; optional Xiaomi-OCR-0 backend |
+| v1.5.0 | Android | `ClearPaper-Android-1.5.0.apk` | First Android build: four-tab UI aligned with iOS, warm-grey palette / logo / `by jpruby` / v1.5.0 (10); capture + page review + geometric rectification + duplicate removal and restore, full cleanup engine, three merge modes, file manager, preview / print / share / save, appearance setting; optional Xiaomi-OCR-0 bridge, fully offline by default |
 | v1.2.0 | Windows | `ClearPaper-Windows-portable.zip` | ClearPaper rebrand; portable, bundled deps, drag-and-drop |
 
+> The Android APK is self-signed: Android will warn about an unknown source once at install time. It needs no Google Play services and no Google account.
+>
 > Current distribution uses a local **Apple Development** certificate: the Mac DMG opens on the same account; for others, re-sign with a **Developer ID** and notarize via `notarytool` (command ready, no code change). iOS free signatures last 7 days.
 
 ## 📄 License
@@ -243,4 +283,4 @@ Issues and PRs welcome — let's make this a real open-source gem together.
 
 ---
 
-<p align="center">ClearPaper · by jpruby · an offline exam-paper clarifier in Swift / Python<br>your data never leaves the device · open and print</p>
+<p align="center">ClearPaper · by jpruby · an offline exam-paper clarifier in Swift / Java / Python<br>your data never leaves the device · open and print</p>

@@ -17,3 +17,7 @@ DerivedData/
 # Local logs / outputs
 扫描件清晰化/
 *.log
+
+# Android local signing key (generated on first build)
+*.jks
+*.idsig

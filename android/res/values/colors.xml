@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="canvas">#FFF6F6F7</color>
+    <color name="panel">#FFFFFFFF</color>
+    <color name="panel2">#FFFAFAFB</color>
+    <color name="ink">#FF1B1B1E</color>
+    <color name="ink2">#FF3A3A3F</color>
+    <color name="sub">#FF6C6C72</color>
+    <color name="mute">#FF9A9AA0</color>
+    <color name="line">#FFE4E4E8</color>
+    <color name="graySoft">#FFEDEDF0</color>
+    <color name="amber">#FFE08A00</color>
+    <color name="amberSoft">#FFFFF3DC</color>
+    <color name="green">#FF12A374</color>
+    <color name="greenSoft">#FFE6F6F0</color>
+    <color name="blue">#FF2F6BFF</color>
+    <color name="blueSoft">#FFEAF0FF</color>
+    <color name="red">#FFE5484D</color>
+    <color name="redSoft">#FFFDECEC</color>
+</resources>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ClearPaper</string>
+    <string name="offline">全离线 · 不上传任何文件 · 数据只在本机</string>
+</resources>

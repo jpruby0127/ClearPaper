@@ -8,12 +8,12 @@
 
 <p align="center">
   <b>把模糊、发黑、带扫描边框的试卷 PDF，一键变成能直接打印的清晰 A4 版。</b><br>
-  原生 macOS / iOS App + Windows 免安装版，<b>全离线、零依赖、不联网、无服务端</b>。
+  原生 macOS / iOS / Android App + Windows 免安装版，<b>全离线、零依赖、不联网、无服务端</b>。
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20iOS%20%7C%20Windows-000000" alt="platform">
-  <img src="https://img.shields.io/badge/language-Swift%20%2F%20Python-orange" alt="language">
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20iOS%20%7C%20Android%20%7C%20Windows-000000" alt="platform">
+  <img src="https://img.shields.io/badge/language-Swift%20%2F%20Java%20%2F%20Python-orange" alt="language">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license">
   <img src="https://img.shields.io/badge/author-jpruby-black" alt="author">
   <img src="https://img.shields.io/badge/engine-100%25%20on--device-green" alt="on-device">
@@ -69,6 +69,8 @@ iOS 端是四页式界面（全离线，导入 / 拍照 → 本机处理 → 合
   <br><sub>左：处理页（拍照扫描、去透印开关、任务卡片）　右：关于页（by jpruby · 版本 1.5.0 (10)）</sub>
 </p>
 
+Android 版沿用同一套四页界面、暖灰配色与同一套算法，直接安装 APK 即可，不用自签、不用电脑。
+
 ## 🚀 快速开始（不用编译）
 
 ### macOS · 拖进应用程序即可用
@@ -102,6 +104,16 @@ App 自带清晰化引擎，**朋友电脑不需要 Python、venv 或任何配�
 - **合并**页：完全合并 / 间隔·双面（每份后补空白页，双面打印不跨卷）/ 分别保存，顺序可上下调整，与 macOS 端共用 `engine/Merge.swift`；
 - **文件**页：输出 PDF 与 OCR 文字稿统一列出，按时间排序，可预览、打印、分享、复制、加入合并、删除；
 - **拍照扫描 + 检查拍摄页 + OCR**：见下一节。
+
+### Android · 下载 APK 直接装
+
+1. 到 [Releases](https://github.com/jpruby0127/ClearPaper/releases) 下载 **`ClearPaper-Android-1.5.0.apk`**（约 150 KB，Android 8.0+，纯 Java 无 so、armeabi / arm64 / x86 通用）；
+2. 手机允许「安装未知来源应用」后点开 APK 安装即可；
+3. 微信里收到试卷 →「用其他应用打开」→ 选 **ClearPaper**；或在「处理」页导入 PDF、拍照扫描、从相册选。
+
+> 与 iOS 版一致：四个标签页（处理 / 合并 / 文件 / 关于）、Logo 与 `by jpruby`、真实版本 1.5.0 (10)、检查拍摄页（删页 / 旋转 / 调序 / 重复页剔除与恢复）、三种合并模式、预览 / 打印 / 分享 / 存文件、外观设置。输出在 App 自己的「清晰版」目录，通过「分享 / 存文件」导出到系统文件。
+>
+> 平台没有的两块系统能力换成了等价实现，见下方「Android 版说明」：Android 无系统文档相机、无系统离线 OCR，分别用「手动快门 + 几何找边矫正 + 检查页」和「可选 Xiaomi-OCR-0 桥接」补齐。
 
 ### Windows · 解压即用（免安装）
 
@@ -155,6 +167,20 @@ iOS 端除了导入 PDF，还能直接拍，而且拍完先过一遍检查页：
 > PDF 本身仍是图像，不叠加文字层，避免破坏打印效果与笔画质量闸门。
 > 拍摄原稿逐页落到 Application Support，App 被系统挂起、临时目录被清理后仍可重试重建。
 
+### Android 版说明
+
+Android 版把上面的界面与流程逐一搬了过来，平台没有的两块系统能力换成了等价实现：
+
+| 能力 | iOS | Android |
+|---|---|---|
+| 多页拍摄 | VisionKit 系统文档相机（自动快门） | **手动快门逐页拍**：天然不会因来不及翻页重复拍同一张；检查页仍做 dHash 去重与一键恢复 |
+| 找边 / 透视矫正 | Vision 文档分割 + 几何兜底 | 纯几何找边（Otsu + 亮段拟合 + 最小二乘 + 单应性逆映射）；找不到可靠纸边就用原图，绝不猜测式裁剪 |
+| OCR 文字稿 | 系统 Vision，离线零体积 | 默认完全离线；在「关于 → OCR 服务」填自己部署的 Xiaomi-OCR-0 地址后，按官方协议生成 Markdown 文字稿并用首页标题自动命名 |
+| PDF 合并 | PDFKit 原样插入页面 | `PdfRenderer` 按 200dpi 逐页重绘后拼接，顺序 / 横竖 / 双面补空白一致；纯矢量文字稿会变成图像页 |
+| 清理引擎 | `engine/Core.swift`（Swift） | `GrayMath.java` 逐行等价移植 + `PdfWrite.java` 手写灰度 Flate 图像 XObject；`android/test/run_test.sh` 可在 Mac 上跑 JVM 回归测试 |
+
+其余完全一致：白场归一 → 去透印 → 自适应 gamma → 单向锐化 → 裁边 → 横竖 A4 → 笔画保留率闸门。拍照件也必须走完这条链路，绝不绕过。
+
 ### 进阶：小米开源的 Xiaomi-OCR-0
 
 [Xiaomi-OCR-0](https://github.com/xiaomi-research/Xiaomi-OCR-0)（0.8B，Apache 2.0，2026-10-30 开源）能把整页解析成**结构化 Markdown**（表格 OTSL、公式 LaTeX），还能做字段抽取（JSON）与文档问答。`python/ocr_xiaomi.py` 是它的轻量桥接后端，按官方 `DOC_PROMPT` 和请求格式调用**本机**的 OpenAI 兼容服务：
@@ -174,7 +200,7 @@ python ocr_xiaomi.py 表格.png --task kie --fields "姓名,学号,总分"
 
 ## 🛠 从源码构建
 
-仓库克隆后，两端都能在本机直接编译，**无需任何第三方依赖**（Swift 标准库 + 系统框架即可）。
+仓库克隆后，四个平台都能在本机直接编译，**无需任何第三方依赖**（Swift 标准库 + Android SDK build-tools + 系统框架即可）。
 
 ```bash
 git clone https://github.com/jpruby0127/ClearPaper.git
@@ -205,6 +231,16 @@ cd ios
 
 > 需要 Xcode 命令行工具与 iOS SDK（`xcode-select --install`）。图标与 `ios/Logo.png` 已随仓库提交；`Core.swift`（引擎）、`Merge.swift`（合并）、`Capture.swift`（文档相机 + 找边矫正 + OCR）、`ScanReview.swift`（检查拍摄页）都是源码直编，只链接系统框架，不依赖 Python 或任何第三方库。
 
+### Android App（签名 APK）
+
+```bash
+cd android
+./build_apk.sh        # aapt2 → javac → d8 → zipalign → apksigner，产出 ../dist/ClearPaper-Android-1.5.0.apk
+./test/run_test.sh    # 纯 JVM 回归测试：引擎 + PDF 写出，不需要模拟器
+```
+
+> 只需 Android SDK 的 `build-tools` 与任一 `platforms/android-3x/android.jar`，**不需要 Gradle / AndroidX / Maven / 联网**。全部 UI 用原生 View 自绘，扫描引擎是 `GrayMath.java`，PDF 由 `PdfWrite.java` 直接写灰度 Flate 图像 XObject，合并用系统 `PdfRenderer`。签名用本机生成的自签 keystore（v1 + v2 + v3）。
+
 ## 🐍 Python 参考引擎（可选）
 
 macOS / iOS App 走的是**编译进包的 Swift 引擎**（可分发、零依赖）。`python/` 里是同一套算法的**参考实现**，方便你研究、批处理或在服务器上跑：
@@ -225,6 +261,7 @@ python ocr_xiaomi.py 某试卷.pdf   # 输出 <名字>-OCR.md
 - [ ] 自定义输出纸张（B5 / Letter）与 DPI
 - [ ] 批量文件夹监视（桌面端常驻）
 - [ ] 可搜索 PDF 文字层（目前导出 `.txt` 旁文件，不改动打印用 PDF）
+- [x] Android 原生 APK（v1.5.0 · 四页 UI / 检查拍摄页 / 三种合并 / 同一套引擎）
 - [x] Windows 免安装版（v1.1.0）
 - [ ] Linux 命令行版
 
@@ -236,8 +273,11 @@ python ocr_xiaomi.py 某试卷.pdf   # 输出 <名字>-OCR.md
 |---|---|---|---|
 | v1.5.0 | macOS | `ClearPaper-macOS-1.5.0.dmg` | 新 Logo + 品牌更名 ClearPaper；侧边栏 UI |
 | v1.5.0 | iOS | `ClearPaper-iOS-1.5.0-unsigned.ipa` | build 10：只用系统文档相机，新增拍完「检查拍摄页」（删页 / 旋转 / 调序 / 重复页剔除与一键恢复）、裁边失败页自动标记并补矫正、图像方向与尺寸归一；彻底移除实验性自研相机；拍照件仍强制走完整 ScanCore 清理流程；四页 UI、by jpruby 与真实版本信息、本机 OCR 文字稿、多份合并、文件管理、外观设置；可选 Xiaomi-OCR-0 后端 |
+| v1.5.0 | Android | `ClearPaper-Android-1.5.0.apk` | 首个 Android 版：四页 UI 与 iOS 对齐、暖灰配色 / Logo / `by jpruby` / 版本 1.5.0 (10)；拍照 + 检查拍摄页 + 几何找边矫正 + 重复页剔除与恢复、完整清理引擎、三种合并、文件管理、预览 / 打印 / 分享 / 存文件、外观设置；可选 Xiaomi-OCR-0 桥接，默认完全离线 |
 | v1.2.0 | Windows | `ClearPaper-Windows-portable.zip` | 品牌更名 ClearPaper；免安装便携包，拖拽即用 |
 
+> Android APK 为自签名发布包，安装时系统会提示「未知来源」，允许一次即可；不依赖 Google Play 服务，也不需要 Google 账号。
+>
 > 当前分发用的是本机 **Apple Development** 证书：Mac DMG 在本人/同账号下双击即开；发给他人建议用 **Developer ID** 重签并 `notarytool` 公证（命令已就绪，无需改代码）。iOS 个人账号签名 7 天有效。
 
 ## 📄 许可证
@@ -247,6 +287,6 @@ python ocr_xiaomi.py 某试卷.pdf   # 输出 <名字>-OCR.md
 ---
 
 <p align="center">
-  ClearPaper · by jpruby · 用 Swift / Python 写的离线试卷清晰工具<br>
+  ClearPaper · by jpruby · 用 Swift / Java / Python 写的离线试卷清晰工具<br>
   数据不出本机 · 打开即印
 </p>
